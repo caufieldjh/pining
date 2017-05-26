@@ -25,8 +25,23 @@ Run as:
 #### Input
 A text file containing a list of UniprotAC IDs, one per line,
 to be used as the interactors to search for.
-Will accept other data if they are present but the file must be in long format (that is, one observation per line). Headings will be ignored.
-Uniprot IDs will be assumed to be in the first column. Additional values will be stored as a list of lists.
+Will accept other data if they are present but the file must be in long format (that is, one observation per line).
+
+Uniprot IDs will be assumed to be in the first column.
+
+For additional data fields, pining_for_new_data.py will determine whether the data category is qualitative or quantitative. Qualitative variables will be treated as categories and subcategories, such that an input that looks like the following (tab delimited):
+
+`uniprot	group1	group2	value`
+
+`M3W421	bags	pos	0.6133`
+
+`M3W421	bags	neg	0.0182`
+
+`M3WX82	yarn	neg	0.1232`
+
+`...`
+
+will be interpreted as "for M3W421, bags and pos is 0.6133" and so on.
 
 #### Output
 * A list of interactions, in PSI-MI TAB format, involving only interactors in the target set. See the following link for full details of PSI-MI TAB format:
