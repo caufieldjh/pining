@@ -9,38 +9,6 @@ IntAct and BioGRID are searched as local databases.
 Produces combined, annotated versions of the network of the 
 retrieved interactions.
 
-Downloads OG mapping files from EggNOG 4.5.
-Uses base NOGs and eukaryote NOGs (euNOGs or KOGs) by default
-for most general coverage, but can retrieve others.
-
-The combined databases and conversion files require ~10 Gb
-of disk space.
-
-INPUT:
-
-A text file containing a list of UniprotAC IDs, one per line,
-to be used as the interactors to search for.
-Will accept other data if they are present but the file must be in
-long format. Headings will be ignored.
-Uniprot IDs will be assumed to be in the first column. 
-Additional values will be stored as a list of lists.
-
-Run as:
- pining_for_new_data.py -inputfile INPUTFILE
-
-OUTPUT:
-
-A list of interactions, in PSI-MI TAB format, involving only 
-interactors in the target set. See the following link for full
-details of PSI-MI TAB format:
-http://wiki.reactome.org/index.php/PSI-MITAB_interactions
-
-The same network, but as a simple edgelist.
-
-An annotation file containing all interactors from the input set
-with interactions found from the database search.
-These annotations include eggNOG OG assignments where available.
-
 '''
 __author__= "Harry Caufield"
 __email__ = "j.harry.caufield@gmail.com"
