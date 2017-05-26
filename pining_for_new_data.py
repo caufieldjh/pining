@@ -34,28 +34,91 @@ def load_prot(filename):
 	along with other data fields, if present.
 	Assumes one unique protein per Uniprot ID.
 	
-	Returns a dict of lists of lists, such that each list includes
-	one set of values from the file, and each dict value contains
-	all values found for the given protein ID.
+	Uses headings if provided, otherwise assigns names to them
+	based on whether they are categorical or not.
+	
+	Returns a dict of protein IDs and a list of lists of associated
+	observations.
+	Also returns heading names of the observations if available,
+	or just assigns generic ones if not provided, and
+	determines if they are qualitative or not.
+	This is crucial to how the observations will be treated.
 	
 	Saves a file containing the list of interactors alone,
 	as "[originalfilename]_prot_only.txt".
 	'''
+	
+	def is_name(string):
+		#Tests if something looks like a group name or a value
+		#Returns True if it's a name, False if not
+		this_is_a_name = False
+		
+		try:
+			float(string)
+		except ValueError:
+			this_is_a_name = True
+		
+		return this_is_a_name
+	
+	prot_dict = {} #Protein IDs are keys, observations are values
+					#If no observations are present all values are "NA"
+	
+	groups = [] #Names of experimental groups and observation values
+				#List of tuples of group names and types
+				#Types are "qual" or "quant"
 
-	prot_dict = {}
-
-	input_lines = []
+	outfilename = "%s_prot_only.txt" % filename[0:-4]
 			
 	with open(filename) as protfile:
 		
 		#Check the first line first to see if it looks like a heading
 		#or a protein ID, in which case, store it
+		
 		firstline = protfile.readline()
 		splitline = (firstline.rstrip()).split("\t")
-		if re.match(upid_match, splitline[0]) != None:
-			upid = splitline[0]
-			prot_dict[upid] = [splitline[1:]]
 		
+		if re.match(upid_match, splitline[0]) != None:
+			#Looks like a Uniprot ID.
+			i = 1
+			j = 1
+			for heading in splitline[1:]:
+				if is_name(heading):
+					groups.append(("Group%s" % i, "qual"))
+					i = i +1
+				else:
+					groups.append(("Value%s" % j, "quant"))
+					j = j +1
+			
+			upid = splitline[0]
+			prot_dict[upid] = splitline[1:]	
+			
+		else: #It's not a Uniprot ID, at least, so assume a header line
+			for heading in splitline[1:]:
+				groups.append((heading, "NA"))
+		
+		#Load data in file
+		#Check on observation format first
+		secondline = protfile.readline()
+		splitline = (secondline.rstrip()).split("\t")
+		i = 1
+		new_groups = []
+		for heading in groups:
+			heading_name = heading[0]
+			if is_name(splitline[i]): 
+				new_groups.append((heading_name, "qual"))
+			else:
+				new_groups.append((heading_name, "quant"))
+			i = i+1
+			
+		groups = new_groups
+		
+		upid = splitline[0]
+		if upid not in prot_dict.keys():
+			prot_dict[upid] = [splitline[1:]]
+		else:
+			prot_dict[upid].append(splitline[1:])
+		
+		#Now read rest of the file		
 		for line in protfile:
 			splitline = (line.rstrip()).split("\t")
 			upid = splitline[0]
@@ -65,12 +128,11 @@ def load_prot(filename):
 				prot_dict[upid].append(splitline[1:])
 				
 	#Set up output file
-	outfilename = "%s_prot_only.txt" % filename[0:-4]
+	
 	os.chdir(directories[0])
 	
 	#Now write the output protein file
 	#With one uniprot ID per line
-	
 	with open(outfilename, 'w') as outfile:
 		#Write the header
 
@@ -79,7 +141,7 @@ def load_prot(filename):
 	
 	os.chdir("..")
 	
-	return prot_dict
+	return prot_dict, groups
 
 def get_ppi_db(name):
 	'''
@@ -833,11 +895,29 @@ def main():
 	
 	#Load protein ID input file
 	if args.inputfile:
-		print("Loading %s as input file." % args.inputfile)
-		protfilename = args.inputfile
-		prot_dict = load_prot(protfilename)
-		prot_ids = prot_dict.keys()
-		print("Loaded %s unique protein IDs." % len(prot_ids))
+		try:
+			print("Loading %s as input file." % args.inputfile)
+			protfilename = args.inputfile
+			prot_dict, groups = load_prot(protfilename)
+			prot_ids = prot_dict.keys()
+			group_count = len(groups)
+			
+			print("Loaded %s unique protein IDs." % len(prot_ids))
+			
+			if group_count > 0:
+				qual_groups = []
+				quant_groups = []
+				for group in groups:
+					if group[1] == "qual":
+						qual_groups.append(group[0])
+					if group[1] == "quant":
+						quant_groups.append(group[0])
+				print("Input contains %s types of observations:" % group_count)
+				print("%s (%s) are categorical and" % (len(qual_groups), qual_groups))
+				print("%s (%s) are numerical.\n" % (len(quant_groups), quant_groups))
+				
+		except IOError as e:
+			sys.exit("Can't find or open that file...\n%s" % e)
 	else:
 		sys.exit("No input file provided.")
 	
