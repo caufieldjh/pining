@@ -20,22 +20,6 @@ from datetime import date
 #Constants and Options
 directories = ["output","databases", "og_info"]
 
-psimitabheader = "#ID(s) interactor A\tID(s) interactor B\tAlt. ID(s) interactor A\tAlt. ID(" \
-"s) interactor B\tAlias(es) interactor A\tAlias(es) interactor B\tInteraction dete" \
-"ction method(s)\tPublication 1st author(s)\tPublication Identifier(s)\t" \
-"Taxid interactor A\tTaxid interactor B\tInteraction type(s)\tSource d" \
-"atabase(s)\tInteraction identifier(s)\tConfidence value(s)\tExpansio" \
-"n method(s)\tBiological role(s) interactor A\tBiological role(s) interactor B\t" \
-"Experimental role(s) interactor A\tExperimental role(s) interactor B\t" \
-"Type(s) interactor A\tType(s) interactor B\tXref(s) interactor A\tXref(s)" \
-"interactor B\tInteraction Xref(s)\tAnnotation(s) interactor A\tAnnotati" \
-"on(s) interactor B\tInteraction annotation(s)\tHost organism(s)\t" \
-"Interaction parameter(s)\tCreation date\tUpdate date\tChecksum(s) inte" \
-"ractor A\tChecksum(s) interactor B\tInteraction Checksum(s)\tNegative" \
-"\tFeature(s) interactor A\tFeature(s) interactor B\tStoichiometry(s) interac" \
-"tor A\tStoichiometry(s) interactor B\tIdentification method participant A\t" \
-"Identification method participant B"
-
 upid_match = re.compile('[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}')
 
 nowstring = (date.today()).isoformat()
@@ -814,7 +798,17 @@ def graph_interactions(ids, unique_ppi, unique_og_ppi, prot_dict,
 							
 		draw_graph(G, "heart_%s_graph.svg" % input_type, node_color)
 		os.chdir("..")
-				
+
+def load_psi_tab_header():
+	#Loads the PSI-MI TAB header format from a file.
+	#Can also get this from IntAct database file 
+	#but this way we don't need to read it.
+	
+	with open("psimitabheader.txt") as format_file:
+		header = (format_file.readline()).rstrip()
+	
+	return header
+			
 #Main
 def main():
 	prot_dict = {} #Keys are unique protein IDs.
@@ -828,6 +822,8 @@ def main():
 						"UniprotAC IDs of proteins to search for, "
 						"one protein ID per line.")
 	args = parser.parse_args()
+	
+	psi_tab_header = load_psi_tab_header()
 	
 	#Set up the output and database storage directories
 	for directory in directories:
