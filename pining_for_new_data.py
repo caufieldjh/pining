@@ -44,8 +44,6 @@ def load_prot(filename):
 	determines if they are qualitative or not.
 	This is crucial to how the observations will be treated.
 	
-	Saves a file containing the list of interactors alone,
-	as "[originalfilename]_prot_only.txt".
 	'''
 	
 	def is_name(string):
@@ -66,9 +64,7 @@ def load_prot(filename):
 	groups = [] #Names of experimental groups and observation values
 				#List of tuples of group names and types
 				#Types are "qual" or "quant"
-
-	outfilename = "%s_prot_only.txt" % filename[0:-4]
-			
+		
 	with open(filename) as protfile:
 		
 		#Check the first line first to see if it looks like a heading
@@ -127,20 +123,6 @@ def load_prot(filename):
 			else:
 				prot_dict[upid].append(splitline[1:])
 				
-	#Set up output file
-	
-	os.chdir(directories[0])
-	
-	#Now write the output protein file
-	#With one uniprot ID per line
-	with open(outfilename, 'w') as outfile:
-		#Write the header
-
-		for upid in prot_dict.keys():
-			outfile.write("%s\n" % upid)
-	
-	os.chdir("..")
-	
 	return prot_dict, groups
 
 def get_ppi_db(name):
@@ -454,43 +436,40 @@ def map_prots_to_ogs(ids):
 	
 	prot_OG_maps = {} #Dictionary of all Uniprot ID to OG maps
 	target_OG_maps = {} 
-	#Dictionary to save protein-OG mapping specific for this interaction set
+	#Dictionary to save protein-OG mapping specific for this input set
 	
-	mapped_count = 0
-	prots_without_OG = 0
+	prots_without_OG = [] #UPIDs of proteins w/o corresponding OGs
+	
+	os.chdir(directories[2])
 	
 	mapfile_list = glob.glob("uniprot_og_maps_*")
 	if len(mapfile_list) == 0:
-		sys.exit("Can't find OG mapping file. May need to start over.")
+		sys.exit("Can't find OG mapping file. Exiting...")
 	else:
 		mapfilename = mapfile_list[0]
 	
+	#Load proteins to OG map file
 	with open(mapfilename) as mapfile:
 		for line in mapfile:
 			splitline = (line.rstrip()).split()
 			upid = splitline[0]
 			og = splitline[1]
 			prot_OG_maps[upid] = og
-			
-	for protein in ids:
-		if protein in prot_OG_maps:
-			matching_og = prot_OG_maps[protein]
-			mapped_count = mapped_count +1
+	
+	#Now look up input UPIDs
+	for upid in ids:
+		if upid in prot_OG_maps:
+			matching_og = prot_OG_maps[upid]
 		else:
-			matching_og = protein	
+			matching_og = upid	
 			#If the protein doesn't map to an OG it retains its upid
-			prots_without_OG = prots_without_OG +1
+			prots_without_OG.append(upid)
 				
-		target_OG_maps[protein] = matching_og
-	
-	og_count = len(set(target_OG_maps.values()))
-	
-	print("Full OG map covers %s Uniprot protein IDs." % len(prot_OG_maps))		
-	print("Mapped %s proteins to OGs. %s proteins did not map to OGs."
-			% (mapped_count, prots_without_OG))
-	print("Map includes %s OGs in total." % og_count)
+		target_OG_maps[upid] = matching_og
 			
-	return target_OG_maps, prot_OG_maps
+	os.chdir("..")		
+	
+	return target_OG_maps, prot_OG_maps, prots_without_OG
 	
 def search_int_file(ids, filename, all_og_map):
 	#Searches a PSI-MI TAB format set of interactions (filename) 
@@ -969,17 +948,51 @@ def main():
 	
 	os.chdir("..")
 	
-	sys.exit("Complete for now. Databases and OG map file are ready to use.")
-	
-	
-	#Testing cutoff
-	
-	
 	#Map proteins to OGs
 	#og_map includes only target protein IDs as keys
-	#all_og_map includes ALL protein IDs
+	#all_og_map includes ALL protein IDs.
+	#We use this second map to get OGs for interactors outside
+	#the target set.
+	
 	print("Mapping target proteins to orthologous groups.")
-	og_map, all_og_map = map_prots_to_ogs(prot_ids)
+	og_map, all_og_map, unmapped = map_prots_to_ogs(prot_ids)
+	
+	unmapped_count = len(unmapped)
+	mapped_count = len(og_map) - unmapped_count
+	all_count = len(all_og_map)
+	all_og_count = len(set(all_og_map.values()))
+	og_count = len(set(og_map.values()))
+	
+	print("Full OG map covers %s Uniprot protein IDs "
+			"and %s OGs." % (all_count, all_og_count))
+	print("Input proteins mapped to %s total OGs." % og_count)
+	print("%s proteins from the input mapped to OGs.\n"
+			"%s proteins did not map to OGs."
+			% (mapped_count, unmapped_count))
+	if len(unmapped) > 0:
+		print("These proteins did not map:")
+	for upid in unmapped:
+		print(upid)
+	
+	#Set up output file
+	outfilename = "%s_prots_and_ogs.txt" % protfilename[0:-4]
+	
+	os.chdir(directories[0])
+	
+	#Now write the output protein file
+	#with one uniprot ID and its corresponding OG per line
+	with open(outfilename, 'w') as outfile:
+		#Write the header
+
+		for upid in prot_dict.keys():
+			og = og_map[upid]
+			outfile.write("%s\t%s\n" % (upid, og))
+	
+	os.chdir("..")
+	
+	sys.exit("Complete for now. Proteins in input have been mapped to OGs.")
+	
+	#Testing cutoff
 	
 	#Look for filtered interaction output if we already have it
 	#If we don't have an output file, use the IntAct set.
