@@ -428,9 +428,58 @@ def get_eggnog_annotations():
 	all_compressed_files = [euannfilename, lucaannfilename]
 	for filename in all_compressed_files:
 		os.remove(filename)
-		
+
+def map_ogs_to_annotations(ogs):
+	#Uses eggNOG to create a dict of OG IDs and corresponding
+	#annotations, as tuples of functional category (FuncCat) and
+	#text summary description.
+	#Only maps OGs passed to it.
+	#Handles combined OGs (e.g., "ENOG1234,ENOG1235") and other IDs
+	
+	og_note_map = {} #Just annotations for OGs mapping to input proteins
+	all_og_notes = {} #All annotations
+	
+	os.chdir(directories[2])
+	
+	annfile_list = glob.glob("*annotations.tsv")
+	if len(annfile_list) == 0:
+		sys.exit("Can't find OG annotation files. Exiting...")
+	
+	for annfilename in annfile_list:
+		with open(annfilename) as annfile:
+			for line in annfile:
+				splitline = (line.rstrip()).split("\t")
+				og = splitline[1]
+				funccat = splitline[4]
+				desc = splitline[5]
+				all_og_notes[og] = (funccat, desc)
+	
+	for og in ogs:
+		if og in all_og_notes:
+			og_note_map[og] = all_og_notes[og]
+		else:
+			split_og = og.split(",")
+			if len(split_og) > 1:
+				funccats = []
+				descs = []
+				for this_og in split_og:
+					this_funccat, this_desc = all_og_notes[this_og]
+					funccats.append(this_funccat)
+					descs.append(this_desc)
+				funccats = list(set(funccats)) #Unique cats only
+				funccats = "".join(funccats)
+				descs = list(set(descs)) #Unique descs only
+				descs = "|".join(descs)
+				og_note_map[og] = (funccats,descs)
+			else:
+				og_note_map[og] = ("NA","NA")
+					
+	os.chdir("..")	
+	
+	return og_note_map, all_og_notes
+
 def map_prots_to_ogs(ids):
-	#Uses EggNOG files to create a dict of protein IDs and 
+	#Uses eggNOG files to create a dict of protein IDs and 
 	#corresponding OGs.
 	#Takes list of Uniprot IDs as input.
 	
@@ -945,7 +994,7 @@ def main():
 	if len(annotation_file_list) == 0:
 		print("No eggNOG annotation files found or they're incomplete. Retrieving them.")
 		get_eggnog_annotations()
-	
+			
 	os.chdir("..")
 	
 	#Map proteins to OGs
@@ -956,6 +1005,10 @@ def main():
 	
 	print("Mapping target proteins to orthologous groups.")
 	og_map, all_og_map, unmapped = map_prots_to_ogs(prot_ids)
+	
+	#Map OGs to their annotations
+	these_ogs = set(og_map.values())
+	og_note_map, all_og_notes = map_ogs_to_annotations(these_ogs)
 	
 	unmapped_count = len(unmapped)
 	mapped_count = len(og_map) - unmapped_count
@@ -983,10 +1036,13 @@ def main():
 	#with one uniprot ID and its corresponding OG per line
 	with open(outfilename, 'w') as outfile:
 		#Write the header
-
+		outfile.write("UPID\teggNOG_OG\tFuncCat\tDescription\n")
+		
 		for upid in prot_dict.keys():
 			og = og_map[upid]
-			outfile.write("%s\t%s\n" % (upid, og))
+			funccat = og_note_map[og][0]
+			desc = og_note_map[og][1]
+			outfile.write("%s\t%s\t%s\t%s\n" % (upid, og, funccat, desc))
 	
 	os.chdir("..")
 	
