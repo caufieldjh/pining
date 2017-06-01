@@ -141,19 +141,28 @@ def get_ppi_db(name):
 		
 	dbfilepath = baseURL + dbfilename
 	
-	dl_dbfile = 1	#If 1, we need to download
+	#Database names may change
+	if name == "IntAct":
+		outfilename = "intact.txt"
+	elif name == "BioGRID":
+		biogrid_db_list = glob.glob('BIOGRID-ALL-*.mitab.txt')
+		if len(biogrid_db_list) > 0:
+			outfilename = biogrid_db_list[0]
+		
+	dl_dbfile = True	#If true, we need to download, and this is the default
 	if os.path.isfile(dbfilename): 
 		#Already have the compressed file, don't download
 		print("Found compressed database file on disk: %s" % dbfilename)
-		decompress_dbfile = 1
-		dl_dbfile = 0
-	if os.path.isfile(outfilepath): 
+		decompress_dbfile = True
+		dl_dbfile = False
+
+	if os.path.isfile(outfilename): #A bit redundant for BioGRID
 		#Already have the decompressed file, don't download
-		print("Found database file on disk: %s" % outfilepath)
-		decompress_dbfile = 0
-		dl_dbfile = 0
+		print("Found database file on disk: %s" % outfilename)
+		decompress_dbfile = False
+		dl_dbfile = False
 		
-	if dl_dbfile == 1:
+	if dl_dbfile:
 		print("Downloading %s database file." % name)
 		print("Downloading from %s" % dbfilepath)
 		response = urllib2.urlopen(dbfilepath)
@@ -171,16 +180,27 @@ def get_ppi_db(name):
 				break
 			sys.stdout.flush()
 			sys.stdout.write(".")
-		decompress_dbfile = 1
+		decompress_dbfile = True
 		
-	if decompress_dbfile == 1:
+	if decompress_dbfile:
 		print("Decompressing %s file." % name)
-		with zipfile.ZipFile(dbfilename, "r") as infile:
-			for filename in infile.namelist():
-				print(filename)
-				outfile = open(filename, 'w+b')
-				outfile.write(infile.read(filename))
-				outfile.close()
+		try:
+			with zipfile.ZipFile(dbfilename, "r") as infile:
+				for filename in infile.namelist():
+					if filename not in ['intact_negative.txt']:
+						#Ignore some files
+						print(filename)
+						outfile = open(filename, 'w+b')
+						outfile.write(infile.read(filename))
+						outfile.close()
+						outfilename = filename
+						break #Just want one file.
+		except zipfile.BadZipfile as e:
+			sys.exit("Something is wrong with this database file.\n"
+						"Please remove it and re-download.\n"
+						"Error: %s" % e)
+					
+	return outfilename
 		
 def get_eggnog_maps(): 
 	'''
@@ -520,116 +540,116 @@ def map_prots_to_ogs(ids):
 	
 	return target_OG_maps, prot_OG_maps, prots_without_OG
 	
-def search_int_file(ids, filename, all_og_map):
+def search_int_file(ids, filename, db, target_ogs, all_og_map):
 	#Searches a PSI-MI TAB format set of interactions (filename) 
 	#for the Uniprot IDs provided (ids) and for and IDs with the same
-	#OGs as the provided IDs, using the OG map.
+	#OGs as the provided IDs, using target_ogs and the og map.
 	
-	all_int = [] #All interactions in the IntAct set
-				 #Treated as a set once all interactions added
-	
-	found_ppi = [] #Interactions containing searched interactors as UPIDs
-	found_og_ppi = [] #Interactions containing searched interactors
-						#as UPIDs, as well as interactions sharing
-						#the same OGs. Still provided as UPIDs here.
+	#Indexes file first, searches IDs in the index, then returns
+	#interactions at the specified indices.
 	
 	ids = set(ids) #ids should be unique, plus sets are more efficient
 	
-	ogs = []
-	upids_not_mapped = [] 
-	for upid in ids:
-		try:
-			if all_og_map[upid] not in ogs:
-				ogs.append(all_og_map[upid])
-		except KeyError:
-			upids_not_mapped.append(upid)
-			all_og_map[upid] = upid
-	print("Protein IDs without corresponding OGs: %s"
-			% ", ".join(upids_not_mapped))
+	all_int = {} #Just the interactors from each interaction.
+					#Keys are line numbers
+					#Values are tuples of interactors
+	all_og_int = {} #Same as all_int but values are tuples of OGs
+					#the proteins belong to.
 	
-	ogs = set(ogs)
+	complete_interactions = [] #List of all matching interactions
+								#Includes all fields provided in database
+	prot_match_count = 0 #Count of interactions with at least one
+							#match in the target set
+	og_match_count = 0	#Count of interactions with at least one match
+						#to an OG with members in the target set
 	
-	single_matches = 0 #Count of interactions involving 1 target protein
-	double_matches = 0 #Count of interactions involving 2 target proteins
-	single_og_matches = 0 #Interactions from shared OGs involving 1 OG member
-	double_og_matches = 0 #Interactions from shared OGs involving 2 OG members
-	
+	if db == "previous":
+		os.chdir(directories[0])
+	else:
+		os.chdir(directories[1])
+		
+	if db == "BioGRID":
+		#BioGRID has its own ID format.
+		#Will need to convert - work in progress.
+		pass
+
+	#Just load interactors from each interaction first
 	with open(filename) as intactfile:
 		#Count the lines in the file first to determine how many PPI
-		#Then load into memory
 		filelen = sum(1 for line in intactfile) -1
 		print("Searching %s interactions." % filelen)
-		prog_width = filelen / 10000
 		
-		#Progbar 1
+		#Progbar
+		prog_width = filelen / 10000
 		sys.stdout.write("[%s]" % (" " * prog_width))
 		sys.stdout.flush()
 		sys.stdout.write("\b" * (prog_width+1))
 		
 		intactfile.seek(0)
-		intactfile.readline()
+		intactfile.readline() #Skip header
 		
+		i = 1
+		#Load all interactor pairs as original IDs and as OGs
 		for line in intactfile:
 			splitline = (line.rstrip()).split("\t")
-			all_int.append(tuple(splitline))
+			#Only store if two Uniprot IDs
+			if (splitline[0].split(":"))[0] == "uniprotkb" and \
+				(splitline[1].split(":"))[0] == "uniprotkb":
+				interactorA = (splitline[0].split(":"))[1]
+				interactorB = (splitline[1].split(":"))[1]
+				interaction = (interactorA, interactorB)
+				all_int[i] = interaction
+				
+				if interactorA in all_og_map:
+					og_A = all_og_map[interactorA]
+				else:
+					og_A = interactorA
+				
+				if interactorB in all_og_map:
+					og_B = all_og_map[interactorB]
+				else:
+					og_B = interactorB
+					
+				og_interaction = (og_A, og_B)
+				all_og_int[i] = og_interaction
 			
-		all_int = set(all_int)
-	
-	j = 0
-	
-	for interaction in all_int:
-		#Count all interactions containing target interactors
-		j = j +1
-		interactors = []
-		for interactor in interaction[0:2]:
-			try:
-				interactors.append((interactor.split(":"))[1])
-			except IndexError:
-				pass
-		interactors = tuple(interactors)
+			i = i +1
+			
+			if i % 10000 == 0:
+				sys.stdout.flush()
+				sys.stdout.write("#")
 		
-		#Lookup each interactor to find corresponding OG
-		og_interactors = []
-		for interactor in interactors:
-			try:
-				og_interactors.append(all_og_map[interactor])
-			except KeyError:
-				og_interactors.append(interactor)
-				
-		found_count = 0
-		og_found_count = 0
-		int_added = 0
-		og_int_added = 0
-		for prot_id in ids:
-			#Check if one or both interactors is a target interactor
-			if prot_id in interactors:
-				found_count = found_count +1
-			if found_count > 0 and int_added == 0:
-				found_ppi.append(interaction)
-				int_added = 1
-				if found_count == 2:
+		#Now search interactor pairs for target interactors
+		get_these_lines = set()
+		
+		for line_num in all_int:
+			for interactor in all_int[line_num]:
+				if interactor in ids:
+					get_these_lines.add(line_num)
+					prot_match_count = prot_match_count +1
 					break
-		for og in ogs:
-			#Check if one or both interactors is a target interactor
-			#but this time, with OGs
-			if og in og_interactors:
-				og_found_count = og_found_count +1
-			if og_found_count > 0 and og_int_added == 0:
-				found_og_ppi.append(interaction)
-				og_int_added = 1
-				if og_found_count == 2:
+					
+		for line_num in all_og_int:
+			for interactor in all_og_int[line_num]:
+				if interactor in target_ogs:
+					get_these_lines.add(line_num)
+					og_match_count = og_match_count +1
 					break
-		if og_found_count == 1:
-			single_og_matches = single_og_matches +1
-		elif found_count == 2:
-			double_og_matches = double_og_matches +1
-				
-		if j % 10000 == 0:
-			sys.stdout.flush()
-			sys.stdout.write("#")
-			
-	return found_ppi, single_matches, double_matches, found_og_ppi, \
-			single_og_matches, double_og_matches
+		
+		intactfile.seek(0)
+		intactfile.readline() #Skip header 	
+		
+		j = 1
+		
+		#Add all interactions from the file
+		for line in intactfile:
+			if j in get_these_lines:
+				complete_interactions.append((line.rstrip()).split("\t"))
+			j = j+1
+		
+	os.chdir("..")
+	
+	return complete_interactions, prot_match_count, og_match_count
 
 def clean_ppi(interactions):
 	#Removes interactions from the list if they are self interactions
@@ -741,18 +761,38 @@ def describe_ppi(interactions):
 			pub_ints[(interactorA, interactorB)] = set([pub_key])
 		
 	return taxo_dict, pub_dict, taxo_ints, pub_ints
-			
-def save_interactions(ppi, outfilename):
-	#Saves a set of interactions to a file
-	tfile = outfilename
+
+def save_prot_list(filename, prot_dict, og_map, og_note_map):
+	#Saves the input proteins with OG assignments and annotations
 	
-	os.chdir(outfiledir)
-	with open(tfile, 'wb') as outfile:
+	os.chdir(directories[0])
+	
+	with open(filename, 'w') as outfile:
 		#Write the header
-		outfile.write("%s\n" % psimitabheader)
+		outfile.write("UPID\teggNOG_OG\tFuncCat\tDescription\n")
+		
+		for upid in prot_dict.keys():
+			og = og_map[upid]
+			funccat = og_note_map[og][0]
+			desc = og_note_map[og][1]
+			outfile.write("%s\t%s\t%s\t%s\n" % (upid, og, funccat, desc))
+	
+	os.chdir("..")
+	
+def save_interactions(filename, ppi):
+	#Saves a set of interactions to a file
+
+	header = load_psi_tab_header()
+
+	os.chdir(directories[0])
+	
+	with open(filename, 'wb') as outfile:
+		#Write the header
+		outfile.write("%s\n" % header)
 		for interaction in ppi:
 			flatline = "\t".join(interaction)
 			outfile.write("%s\n" % flatline)
+			
 	os.chdir("..")
 			
 def graph_interactions(ids, unique_ppi, unique_og_ppi, prot_dict, 
@@ -954,27 +994,33 @@ def main():
 	os.chdir(directories[1])
 	intact_db_list = glob.glob('intact*.txt')
 	if len(intact_db_list) > 1:
-		#Intact provides a list of negative interactions in the same file
-		if 'intact_negative.txt' in intact_db_list:
-			print("Found IntAct database file.")
-		else:
-			sys.exit("Found more than one copy of the IntAct database.\n"
+		sys.exit("Found more than one copy of the IntAct database.\n"
 						"Check for duplicates.")
+						
 	if len(intact_db_list) == 0:
 		print("No IntAct database found. Downloading new copy.")
-		get_ppi_db("IntAct")
+		intactfilename = get_ppi_db("IntAct")
+		
 	if len(intact_db_list) == 1:
 		print("Found IntAct database file.")
+		intactfilename = intact_db_list[0]
+	
+	intactfile_loc = os.path.join(directories[1], intactfilename)
 		
 	biogrid_db_list = glob.glob('BIOGRID-ALL-*.mitab.txt')
 	if len(biogrid_db_list) > 1:
 		sys.exit("Found more than one copy of the BioGRID database.\n"
 					"Check for duplicates.")
+					
 	if len(biogrid_db_list) == 0:
 		print("No BioGRID database found. Downloading new copy.")
-		get_ppi_db("BioGRID")
+		biogridfilename = get_ppi_db("BioGRID")
+		
 	if len(biogrid_db_list) == 1:
 		print("Found BioGRID database file.")
+		biogridfilename = biogrid_db_list[0]
+	
+	biogridfile_loc = os.path.join(directories[1], biogridfilename)
 		
 	os.chdir("..")
 		
@@ -1027,51 +1073,52 @@ def main():
 	for upid in unmapped:
 		print(upid)
 	
-	#Set up output file
-	outfilename = "%s_prots_and_ogs.txt" % protfilename[0:-4]
-	
-	os.chdir(directories[0])
-	
-	#Now write the output protein file
+	#Now write the output protein list file
 	#with one uniprot ID and its corresponding OG per line
-	with open(outfilename, 'w') as outfile:
-		#Write the header
-		outfile.write("UPID\teggNOG_OG\tFuncCat\tDescription\n")
-		
-		for upid in prot_dict.keys():
-			og = og_map[upid]
-			funccat = og_note_map[og][0]
-			desc = og_note_map[og][1]
-			outfile.write("%s\t%s\t%s\t%s\n" % (upid, og, funccat, desc))
-	
-	os.chdir("..")
-	
-	sys.exit("Complete for now. Proteins in input have been mapped to OGs.")
-	
-	#Testing cutoff
+	simpleoutfilename = "%s_prots_and_ogs.txt" % protfilename[0:-4]
+	save_prot_list(simpleoutfilename, prot_dict, og_map, og_note_map)
 	
 	#Look for filtered interaction output if we already have it
 	#If we don't have an output file, use the IntAct set.
-	outfilename = "matching_ppi.txt"
-	ppi_ofile_list = glob.glob(os.path.join(outfiledir, outfilename))
-	if len(ppi_ofile_list) >1:
-		sys.exit("Found multiple potential interaction input files. Exiting...")
-	elif len(ppi_ofile_list) == 0 :
-		have_output = 0
+	ppioutfilename = "%s_matching_ppi.txt" % protfilename[0:-4]
+	
+	ppioutfilepath = os.path.join(directories[0], ppioutfilename)
+	
+	if not os.path.isfile(ppioutfilepath):
+		have_output = False
 		print("Did not find previous output file.")
 		print("Searching IntAct interactions for provided protein IDs.")
-		match_ppi, single, double, og_match_ppi, og_single, og_double \
-			= search_int_file(prot_ids, intactfile_loc, all_og_map)
-	elif len(ppi_ofile_list) == 1:
-		have_output = 1
-		print("Found existing interaction output file: %s" % ppi_ofile_list[0])
+		db = "IntAct"
+		complete_interactions, prot_match_count, og_match_count \
+			= search_int_file(prot_ids, intactfilename, db, these_ogs, all_og_map)
+		#print("Searching BioGRID interactions for provided protein IDs.")
+		#db = "BioGRID"
+		#complete_interactions, prot_match_count, og_match_count \
+			#= search_int_file(prot_ids, biogridfilename, db, these_ogs, all_og_map)
+	else:
+		have_output = True
+		print("Found existing interaction output file: %s" % ppioutfilename)
 		print("Analyzing previous interaction output.")
-		match_ppi, single, double, og_match_ppi, og_single, og_double \
-			= search_int_file(prot_ids, ppi_ofile_list[0], all_og_map)
+		db = "previous"
+		complete_interactions, prot_match_count, og_match_count \
+			= search_int_file(prot_ids, ppioutfilename, db, these_ogs, all_og_map)
 	
-	print("\nFound %s total interactions involving target protein IDs." % len(match_ppi))
-	print("%s interactions involve one target protein." % single)
-	print("%s interactions involve two target proteins." % double)
+	ppi_count = len(complete_interactions)
+	
+	print("\nFound %s total interactions involving target protein IDs "
+			"or shared OGs." % ppi_count)
+	print("%s interactions involve at least one target protein." % prot_match_count)
+	print("%s interactions involve at least one matching OG." % og_match_count)
+	
+	#Save the matching set if we don't have one yet
+	if not have_output:
+		print("\nSaving matching interactions to %s." % ppioutfilename)
+		save_interactions(ppioutfilename, complete_interactions)
+	
+	sys.exit("Complete for now. See protein list in %s." % 
+				(simpleoutfilename))
+	
+	#Testing cutoff
 	
 	#Filter self interactions and non-protein interactions
 	#Also determine how many interactions are unique 
@@ -1198,13 +1245,6 @@ def main():
 	for count in og_high_pub_int_dict:
 		print("%s\t\t%s" % (count[0], count[1]))
 		
-	#Save the matching set if we don't have one yet
-	if have_output == 0:
-		outfilename = "matching_og_ppi.txt"
-		print("\nSaving filtered interactions to %s." % outfilename)
-		save_interactions(og_clean_interactions, outfilename)
-	
-	
 	#Build and visualize ALL graphs now
 	print("\n\nBuilding and visualizing graphs.")
 	graph_interactions(prot_ids, unique, og_unique, prot_dict, all_og_map, 
