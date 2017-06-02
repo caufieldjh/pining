@@ -17,6 +17,9 @@ import argparse
 import glob, gzip, operator, os, random, re, sys, urllib2, zipfile
 from datetime import date
 
+import pandas as pd
+from pandas import pivot_table
+
 #Constants and Options
 directories = ["output","databases", "og_info"]
 
@@ -38,7 +41,7 @@ def load_prot(filename):
 	based on whether they are categorical or not.
 	
 	Returns a dict of protein IDs and a list of lists of associated
-	observations.
+	observations. Also returns Pandas data frame.
 	Also returns heading names of the observations if available,
 	or just assigns generic ones if not provided, and
 	determines if they are qualitative or not.
@@ -64,6 +67,8 @@ def load_prot(filename):
 	groups = [] #Names of experimental groups and observation values
 				#List of tuples of group names and types
 				#Types are "qual" or "quant"
+	
+	data = [] #Raw data for setting up data frame
 		
 	with open(filename) as protfile:
 		
@@ -117,13 +122,20 @@ def load_prot(filename):
 		#Now read rest of the file		
 		for line in protfile:
 			splitline = (line.rstrip()).split("\t")
+			data.append(splitline)
 			upid = splitline[0]
 			if upid not in prot_dict.keys():
 				prot_dict[upid] = [splitline[1:]]
 			else:
 				prot_dict[upid].append(splitline[1:])
-				
-	return prot_dict, groups
+	
+	#Set up data frame
+	group_names = ["id"]
+	for group in groups:
+		group_names.append(group[0])		
+	prot_frame = pd.DataFrame(data, columns=group_names, dtype=float)
+
+	return prot_dict, prot_frame, groups
 
 def get_ppi_db(name):
 	'''
@@ -895,6 +907,31 @@ def load_psi_tab_header():
 		header = (format_file.readline()).rstrip()
 	
 	return header
+	
+def save_wide_data(filename, prot_frame, groups):
+	#Saves a set of observations to a file in wide format
+	#i.e. one set of observations per line rather than
+	#one observation per line.
+	#Uses Pandas data frame
+	#Groups will tell us what kind of observations we have.
+	
+	os.chdir(directories[0])
+	
+	cols = []
+	vals = []
+	#Determine indices beyond the id
+	for group in groups:
+		if group[1] == "qual":
+			cols.append(group[0])
+		else:
+			vals.append(group[0])
+	
+	prot_frame_wide = pivot_table(prot_frame, values=vals, 
+									index='id', columns=cols)
+	
+	prot_frame_wide.to_csv(filename, sep='\t', na_rep='NA')
+		
+	os.chdir("..")
 			
 #Main
 def main():
@@ -921,15 +958,17 @@ def main():
 	#Load protein ID input file
 	if args.inputfile:
 		try:
+			have_obs = False
+			
 			print("Loading %s as input file." % args.inputfile)
 			protfilename = args.inputfile
-			prot_dict, groups = load_prot(protfilename)
+			prot_dict, prot_frame, groups = load_prot(protfilename)
 			prot_ids = prot_dict.keys()
 			group_count = len(groups)
 			
 			print("Loaded %s unique protein IDs." % len(prot_ids))
 			
-			if group_count > 0:
+			if group_count > 0: 
 				qual_groups = []
 				quant_groups = []
 				for group in groups:
@@ -937,14 +976,26 @@ def main():
 						qual_groups.append(group[0])
 					if group[1] == "quant":
 						quant_groups.append(group[0])
+				
 				print("Input contains %s types of observations:" % group_count)
 				print("%s (%s) are categorical and" % (len(qual_groups), qual_groups))
 				print("%s (%s) are numerical.\n" % (len(quant_groups), quant_groups))
+				
+				if len(qual_groups) > 0 and len(quant_groups) > 0:
+					have_obs = True
 				
 		except IOError as e:
 			sys.exit("Can't find or open that file...\n%s" % e)
 	else:
 		sys.exit("No input file provided.")
+	
+	if have_obs:
+		#Write the output protein data file
+		#This is the input data in wide format, essentially
+		print("Converting input data observations to wide form.")
+		dataoutfilename = "%s_wide.txt" % protfilename[0:-4]
+		save_wide_data(dataoutfilename, prot_frame, groups)
+		outputs["Input data in wide form"] = dataoutfilename
 	
 	#Locate PPI database files
 	#Download if necessary.
