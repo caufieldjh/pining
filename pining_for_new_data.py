@@ -672,13 +672,16 @@ def search_int_file(ids, filename, db, target_ogs, all_og_map):
 			interaction = (interactorA, interactorB)
 			rec_interaction = (interactorB, interactorA)
 			
+			#Only want unique pub_ids
 			added = False
 			if interaction in ppi_pubs:
-				ppi_pubs[interaction].append(pub_ids)
-				added = True
+				if pub_ids not in ppi_pubs[interaction]:
+					ppi_pubs[interaction].append(pub_ids)
+					added = True
 			if rec_interaction in ppi_pubs and not added:
-				ppi_pubs[rec_interaction].append(pub_ids)
-				added = True
+				if pub_ids not in ppi_pubs[rec_interaction]:
+					ppi_pubs[rec_interaction].append(pub_ids)
+					added = True
 			
 			if not added:
 				ppi_pubs[interaction] = [pub_ids]
