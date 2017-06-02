@@ -557,12 +557,20 @@ def search_int_file(ids, filename, db, target_ogs, all_og_map):
 					#the proteins belong to.
 	
 	complete_interactions = [] #List of all matching interactions
+								#As split lists
 								#Includes all fields provided in database
 	prot_match_count = 0 #Count of interactions with at least one
 							#match in the target set
 	og_match_count = 0	#Count of interactions with at least one match
 						#to an OG with members in the target set
 	
+	unique_interactions = set() #Unique interactions (by publication) only.
+						#Includes no self interactions.
+						#DOES include reciprocal interactions as
+						#directionality may be relevant to some data sets.
+						#Includes only interactor and publication IDs.
+	unique_og_interactions = set() #Same, but with OGs.
+							
 	if db == "previous":
 		os.chdir(directories[0])
 	else:
@@ -647,121 +655,32 @@ def search_int_file(ids, filename, db, target_ogs, all_og_map):
 				complete_interactions.append((line.rstrip()).split("\t"))
 			j = j+1
 		
+	#Now construct set of unique interactions
+	for ppi in complete_interactions:
+		if ppi[0] != ppi[1]:
+			pub_ids = ppi[8]
+			unique_interactions.add((ppi[0], ppi[1], pub_ids))
+			
+			interactorA = (ppi[0].split(":"))[1]
+			interactorB = (ppi[1].split(":"))[1]
+			
+			if interactorA in all_og_map:
+				og_A = all_og_map[interactorA]
+			else:
+				og_A = interactorA
+			
+			if interactorB in all_og_map:
+				og_B = all_og_map[interactorB]
+			else:
+				og_B = interactorB
+					
+			unique_og_interactions.add((og_A, og_B, pub_ids))
+											 
 	os.chdir("..")
 	
-	return complete_interactions, prot_match_count, og_match_count
-
-def clean_ppi(interactions):
-	#Removes interactions from the list if they are self interactions
-	#only or involve non-protein interactors.
-	#Also produces the set of unique interactions.
+	return complete_interactions, prot_match_count, og_match_count, \
+			unique_interactions, unique_og_interactions
 	
-	clean_interactions = []
-	self_interactions = []
-	non_ppi = []
-	
-	unique = set() #All sets of interacting protein pairs
-					#from those in the ppi
-				#This is a set of tuples, with no repeats
-				
-	for interaction in interactions:
-		interactors = []
-		for interactor in interaction[0:2]:
-			remove = 0
-			if interactor == "-":
-				self_interactions.append(interaction)
-				remove = 1
-				break
-			elif interactor.split(":")[0] != "uniprotkb":
-				non_ppi.append(interaction)
-				remove = 1
-				break
-			interactors.append((interactor.split(":"))[1])
-		interactors = tuple(interactors)
-		if remove == 0:
-			clean_interactions.append(interaction)
-			if interactors not in unique:
-				unique.add(interactors)
-				
-	return clean_interactions, self_interactions, non_ppi, unique
-	
-def describe_ppi(interactions):
-	'''
-	Gets dicts, of taxons and publications
-	associated with interactions and interactors.
-	Also gets the inverse: taxons and publications each 
-	interaction is seen in - though in this case,
-	interactions are just pairs of interactors in any arrangement
-	(so A vs. B is the same as B vs. A).
-	'''
-	
-	taxo_dict = {} #Taxonomic breakdown of interactions.
-					#Keys are names and taxids.
-					#Values are lists of interactions 
-					#involving the source or pair of sources.
-					#Cross-taxon interactions are counted separately.
-	
-	pub_dict = {} #Sources of interactions.
-					#Keys are a tab-delimited string of author and PMID.
-					#Values are lists of interactions
-					#involving the source.
-	
-	taxo_ints = {} #Keys are tuples of interactors in an interaction
-					#Values are names and taxids as used in taxo_dict.
-					#Values are stored in a set as we only want uniques.
-	
-	pub_ints = {}  #Keys are tuples of interactors in an interaction
-					#Values are author and PMID strings as in pub_dict.
-					#Values are stored in a set as we only want uniques.
-	
-	for interaction in interactions:
-		interactorA = (interaction[0].split(":"))[1]
-		interactorB = (interaction[1].split(":"))[1]
-		
-		#Get taxonomic breakdown and taxon lists
-		taxonA = (interaction[9].split(":"))[1]
-		taxonB = (interaction[10].split(":"))[1]
-		taxonAB = taxonA + "\t" + taxonB
-		if taxonAB not in taxo_dict:
-			taxo_dict[taxonAB] = [interaction]
-		else:
-			taxo_dict[taxonAB].append(interaction)
-		
-		#Add to taxon list for these interactors
-		if (interactorA, interactorB) in taxo_ints or \
-			(interactorB, interactorA) in taxo_ints:
-			if (interactorA, interactorB) not in taxo_ints:
-				taxo_ints[(interactorA, interactorB)] = set([taxonAB])
-			else:
-				taxo_ints[(interactorA, interactorB)].add(taxonAB)
-		else:
-			taxo_ints[(interactorA, interactorB)] = set([taxonAB])
-		
-		#Get publication breakdown
-		author = interaction[7]
-		pub_ids = interaction[8].split("|")
-		for value in pub_ids:
-			splitvalue = value.split(":")
-			if splitvalue[0] == "pubmed":
-				pmid = splitvalue[1]
-		pub_key = author + "\t" + pmid
-		if pub_key not in pub_dict:
-			pub_dict[pub_key] = [interaction]
-		else:
-			pub_dict[pub_key].append(interaction)
-	
-		#Add to pub list for these interactors
-		if (interactorA, interactorB) in pub_ints or \
-			(interactorB, interactorA) in pub_ints:
-			if (interactorA, interactorB) not in pub_ints:
-				pub_ints[(interactorA, interactorB)] = set([pub_key])
-			else:
-				pub_ints[(interactorA, interactorB)].add(pub_key)
-		else:
-			pub_ints[(interactorA, interactorB)] = set([pub_key])
-		
-	return taxo_dict, pub_dict, taxo_ints, pub_ints
-
 def save_prot_list(filename, prot_dict, og_map, og_note_map):
 	#Saves the input proteins with OG assignments and annotations
 	
@@ -873,8 +792,6 @@ def graph_interactions(ids, unique_ppi, unique_og_ppi, prot_dict,
 			hc_og_int.append((og_interaction[0], og_interaction[1],
 							og_pub_int_counts[interaction]))
 		
-			
-							
 	for input_type in ["protein", "high_confidence_protein", "OG",
 						"high_confidence_OG","exp_OG",
 						"exp_high_confidence_OG"]:
@@ -944,6 +861,8 @@ def main():
 	prot_dict = {} #Keys are unique protein IDs.
 					#Values are lists of lists of additional data,
 					#if present.
+	
+	outputs = {} #Names of output files
 	
 	print(sys.argv[0])
 	
@@ -1077,6 +996,8 @@ def main():
 	#with one uniprot ID and its corresponding OG per line
 	simpleoutfilename = "%s_prots_and_ogs.txt" % protfilename[0:-4]
 	save_prot_list(simpleoutfilename, prot_dict, og_map, og_note_map)
+	outputs["Proteins in the input and corresponding OGs"] \
+			= simpleoutfilename
 	
 	#Look for filtered interaction output if we already have it
 	#If we don't have an output file, use the IntAct set.
@@ -1089,50 +1010,48 @@ def main():
 		print("Did not find previous output file.")
 		print("Searching IntAct interactions for provided protein IDs.")
 		db = "IntAct"
-		complete_interactions, prot_match_count, og_match_count \
+		complete_interactions, prot_match_count, og_match_count, \
+			unique_interactions, unique_og_interactions \
 			= search_int_file(prot_ids, intactfilename, db, these_ogs, all_og_map)
 		#print("Searching BioGRID interactions for provided protein IDs.")
 		#db = "BioGRID"
-		#complete_interactions, prot_match_count, og_match_count \
+		#complete_interactions, prot_match_count, og_match_count, \
+			#unique_interactions, unique_og_interactions \
 			#= search_int_file(prot_ids, biogridfilename, db, these_ogs, all_og_map)
 	else:
 		have_output = True
 		print("Found existing interaction output file: %s" % ppioutfilename)
 		print("Analyzing previous interaction output.")
 		db = "previous"
-		complete_interactions, prot_match_count, og_match_count \
+		complete_interactions, prot_match_count, og_match_count, \
+			unique_interactions, unique_og_interactions \
 			= search_int_file(prot_ids, ppioutfilename, db, these_ogs, all_og_map)
 	
 	ppi_count = len(complete_interactions)
+	unique_ppi_by_pub = len(unique_interactions)
+	unique_ogi_by_pub = len(unique_og_interactions)
 	
 	print("\nFound %s total interactions involving target protein IDs "
 			"or shared OGs." % ppi_count)
 	print("%s interactions involve at least one target protein." % prot_match_count)
 	print("%s interactions involve at least one matching OG." % og_match_count)
+	print("%s unique protein interactions by publication." % unique_ppi_by_pub)
+	print("%s unique OG vs OG interactions by publication." % unique_ogi_by_pub)
 	
 	#Save the matching set if we don't have one yet
 	if not have_output:
-		print("\nSaving matching interactions to %s." % ppioutfilename)
+		print("\nSaving matching interactions...")
 		save_interactions(ppioutfilename, complete_interactions)
+		outputs["Matching complete interactions in PSI-MI TAB format"] \
+			= ppioutfilename
 	
-	sys.exit("Complete for now. See protein list in %s." % 
-				(simpleoutfilename))
+	print("Complete. See output files:\n")
+	for output_type in outputs:
+		print("%s: %s\n" % (output_type, outputs[output_type]))
+			
+	sys.exit()
 	
 	#Testing cutoff
-	
-	#Filter self interactions and non-protein interactions
-	#Also determine how many interactions are unique 
-	#(remove reciprocals and compress across publications)
-	print("\nFiltering out self and non-protein interactions...")
-	clean_interactions, self_interactions, non_ppi, unique = clean_ppi(match_ppi)
-	print("Found %s PPI." % len(clean_interactions))
-	print("Found %s self interactions." % len(self_interactions))
-	print("Found %s non-protein interactions." % len(non_ppi))
-	print("%s interactions are unique (by protein ID) across all " 
-			"publications in this list." % len(unique))
-	
-	#Describe the interactions
-	taxo_dict, pub_dict, taxo_ints, pub_ints = describe_ppi(clean_interactions)
 	
 	#Get top lists of them
 	#Get counts first
@@ -1185,26 +1104,6 @@ def main():
 	'''
 	OG-expanded interaction networks below.
 	'''
-	
-	print("\n\nWith all interactors sharing OG membership...")
-	print("\nFound %s total interactions involving target protein IDs." % len(og_match_ppi))
-	print("%s interactions involve one target protein." % og_single)
-	print("%s interactions involve two target proteins." % og_double)
-	
-	#Filter self interactions and non-protein interactions
-	#Also determine how many interactions are unique 
-	#(remove reciprocals and compress across publications)
-	print("\nFiltering out self and non-protein interactions...")
-	og_clean_interactions, og_self_interactions, og_non_ppi, og_unique \
-			= clean_ppi(og_match_ppi)
-	print("Found %s PPI." % len(og_clean_interactions))
-	print("Found %s self interactions." % len(og_self_interactions))
-	print("Found %s non-protein interactions." % len(og_non_ppi))
-	print("%s interactions are unique (by protein ID) across all " 
-			"publications in this list." % len(og_unique))
-	
-	#Describe the interactions
-	og_taxo_dict, og_pub_dict, og_taxo_ints, og_pub_ints = describe_ppi(og_clean_interactions)
 	
 	#Get top lists of them
 	#Get counts first
