@@ -541,12 +541,16 @@ def map_prots_to_ogs(ids):
 	return target_OG_maps, prot_OG_maps, prots_without_OG
 	
 def search_int_file(ids, filename, db, target_ogs, all_og_map):
-	#Searches a PSI-MI TAB format set of interactions (filename) 
-	#for the Uniprot IDs provided (ids) and for and IDs with the same
-	#OGs as the provided IDs, using target_ogs and the og map.
-	
-	#Indexes file first, searches IDs in the index, then returns
-	#interactions at the specified indices.
+	'''
+	Searches a PSI-MI TAB format set of interactions (filename) 
+	for the Uniprot IDs provided (ids) and for and IDs with the same
+	OGs as the provided IDs, using target_ogs and the og map.
+	Indexes file first, searches IDs in the index, then returns
+	interactions at the specified indices.
+	Also returns interactions in short form, as proteins, corresponding
+	OGs, and counts/IDs of publications each interaction was observed
+	in.
+	'''
 	
 	ids = set(ids) #ids should be unique, plus sets are more efficient
 	
@@ -564,12 +568,14 @@ def search_int_file(ids, filename, db, target_ogs, all_og_map):
 	og_match_count = 0	#Count of interactions with at least one match
 						#to an OG with members in the target set
 	
-	unique_interactions = set() #Unique interactions (by publication) only.
-						#Includes no self interactions.
-						#DOES include reciprocal interactions as
-						#directionality may be relevant to some data sets.
-						#Includes only interactor and publication IDs.
-	unique_og_interactions = set() #Same, but with OGs.
+	ppi_pubs = {} #Dictionary of tuples of protein IDs as keys
+						#Values are lists of all pub_ids the interaction
+						#or any interactions with OG membership shared
+						#for both proteins has been observed.
+						
+	short_interactions = [] #Short form of interaction list, where each
+							#interaction has the form:
+							#[protA, protB, OG_A, OG_B, pub_count, pub_ids]
 							
 	if db == "previous":
 		os.chdir(directories[0])
@@ -655,31 +661,55 @@ def search_int_file(ids, filename, db, target_ogs, all_og_map):
 				complete_interactions.append((line.rstrip()).split("\t"))
 			j = j+1
 		
-	#Now construct set of unique interactions
+	#Now construct the compressed interaction dict
 	for ppi in complete_interactions:
-		if ppi[0] != ppi[1]:
-			pub_ids = ppi[8]
-			unique_interactions.add((ppi[0], ppi[1], pub_ids))
-			
+		interactorA = ppi[0]
+		interactorB = ppi[1]
+		pub_ids = ppi[8]
+		if interactorA != interactorB: #Ignore self interactions
 			interactorA = (ppi[0].split(":"))[1]
 			interactorB = (ppi[1].split(":"))[1]
+			interaction = (interactorA, interactorB)
+			rec_interaction = (interactorB, interactorA)
 			
-			if interactorA in all_og_map:
-				og_A = all_og_map[interactorA]
-			else:
-				og_A = interactorA
+			added = False
+			if interaction in ppi_pubs:
+				ppi_pubs[interaction].append(pub_ids)
+				added = True
+			if rec_interaction in ppi_pubs and not added:
+				ppi_pubs[rec_interaction].append(pub_ids)
+				added = True
 			
-			if interactorB in all_og_map:
-				og_B = all_og_map[interactorB]
-			else:
-				og_B = interactorB
-					
-			unique_og_interactions.add((og_A, og_B, pub_ids))
+			if not added:
+				ppi_pubs[interaction] = [pub_ids]
+	
+	#Add PPI and pub IDs to short interaction list, with OGs
+	for ppi in ppi_pubs:
+		prot_A = ppi[0]
+		prot_B = ppi[1]
+		pub_ids = ppi_pubs[ppi]
+		pub_count = str(len(pub_ids)) #Convert to string
+		pub_ids = ",".join(ppi_pubs[ppi]) #Convert to string
+		
+		if prot_A in all_og_map:
+			og_A = all_og_map[prot_A]
+		else:
+			og_A = prot_A
+		
+		if prot_B in all_og_map:
+			og_B = all_og_map[prot_B]
+		else:
+			og_B = prot_B
+		
+		
+		values = [prot_A, prot_B, og_A, og_B, pub_count, pub_ids]
+		
+		short_interactions.append(values)
 											 
 	os.chdir("..")
 	
 	return complete_interactions, prot_match_count, og_match_count, \
-			unique_interactions, unique_og_interactions
+			short_interactions
 	
 def save_prot_list(filename, prot_dict, og_map, og_note_map):
 	#Saves the input proteins with OG assignments and annotations
@@ -698,11 +728,18 @@ def save_prot_list(filename, prot_dict, og_map, og_note_map):
 	
 	os.chdir("..")
 	
-def save_interactions(filename, ppi):
+def save_interactions(filename, ppi, mode):
 	#Saves a set of interactions to a file
-
-	header = load_psi_tab_header()
-
+	#This function takes a mode argument which may be one of:
+	#"tab" - for full PSI-MI TAB format entries
+	#"short" - for lists of interactors and publications only
+	#These only determine the header
+	
+	if mode == "tab":
+		header = load_psi_tab_header()
+	if mode == "short":
+		header = "prot_A\tprot_B\tOG_A\tOG_B\tPubCount\tPublications"
+	
 	os.chdir(directories[0])
 	
 	with open(filename, 'wb') as outfile:
@@ -711,7 +748,7 @@ def save_interactions(filename, ppi):
 		for interaction in ppi:
 			flatline = "\t".join(interaction)
 			outfile.write("%s\n" % flatline)
-			
+		
 	os.chdir("..")
 			
 def graph_interactions(ids, unique_ppi, unique_og_ppi, prot_dict, 
@@ -872,8 +909,6 @@ def main():
 						"one protein ID per line.")
 	args = parser.parse_args()
 	
-	psi_tab_header = load_psi_tab_header()
-	
 	#Set up the output and database storage directories
 	for directory in directories:
 		if not os.path.isdir(directory):
@@ -1002,7 +1037,7 @@ def main():
 	#Look for filtered interaction output if we already have it
 	#If we don't have an output file, use the IntAct set.
 	ppioutfilename = "%s_matching_ppi.txt" % protfilename[0:-4]
-	
+	shortoutfilename = "%s_matching_short.txt" % protfilename[0:-4]
 	ppioutfilepath = os.path.join(directories[0], ppioutfilename)
 	
 	if not os.path.isfile(ppioutfilepath):
@@ -1011,39 +1046,44 @@ def main():
 		print("Searching IntAct interactions for provided protein IDs.")
 		db = "IntAct"
 		complete_interactions, prot_match_count, og_match_count, \
-			unique_interactions, unique_og_interactions \
+			short_interactions \
 			= search_int_file(prot_ids, intactfilename, db, these_ogs, all_og_map)
 		#print("Searching BioGRID interactions for provided protein IDs.")
 		#db = "BioGRID"
 		#complete_interactions, prot_match_count, og_match_count, \
-			#unique_interactions, unique_og_interactions \
+			#short_interactions \
 			#= search_int_file(prot_ids, biogridfilename, db, these_ogs, all_og_map)
+			
+		##This should append interactions rather than replacing them
+		##And then will need to check for duplicates.
 	else:
 		have_output = True
 		print("Found existing interaction output file: %s" % ppioutfilename)
 		print("Analyzing previous interaction output.")
 		db = "previous"
 		complete_interactions, prot_match_count, og_match_count, \
-			unique_interactions, unique_og_interactions \
+			short_interactions \
 			= search_int_file(prot_ids, ppioutfilename, db, these_ogs, all_og_map)
 	
 	ppi_count = len(complete_interactions)
-	unique_ppi_by_pub = len(unique_interactions)
-	unique_ogi_by_pub = len(unique_og_interactions)
+	short_count = len(short_interactions)
 	
 	print("\nFound %s total interactions involving target protein IDs "
 			"or shared OGs." % ppi_count)
 	print("%s interactions involve at least one target protein." % prot_match_count)
 	print("%s interactions involve at least one matching OG." % og_match_count)
-	print("%s unique protein interactions by publication." % unique_ppi_by_pub)
-	print("%s unique OG vs OG interactions by publication." % unique_ogi_by_pub)
+	print("%s unique protein interactions after compression." % short_count)
 	
 	#Save the matching set if we don't have one yet
 	if not have_output:
 		print("\nSaving matching interactions...")
-		save_interactions(ppioutfilename, complete_interactions)
+		save_interactions(ppioutfilename, complete_interactions, "tab")
 		outputs["Matching complete interactions in PSI-MI TAB format"] \
 			= ppioutfilename
+		print("\nSaving short interaction file with publication counts...")
+		save_interactions(shortoutfilename, short_interactions, "short")
+		outputs["Matching short interactions with OGs and publication counts"] \
+			= shortoutfilename
 	
 	print("Complete. See output files:\n")
 	for output_type in outputs:
