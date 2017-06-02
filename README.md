@@ -16,7 +16,9 @@ IntAct (http://www.ebi.ac.uk/intact/) and BioGRID (https://thebiogrid.org/) are 
 Downloads OG mapping files from EggNOG 4.5 (http://eggnogdb.embl.de). Uses base NOGs and eukaryote NOGs (euNOGs or KOGs) by default for most general coverage, but can retrieve others.
 
 ### Requirements 
-Does not require anything fancy yet, though the combined databases and conversion files require ~10 Gb of disk space and are used in other modules.
+Requires [pandas](http://pandas.pydata.org/).
+
+The combined databases and conversion files require ~10 Gb of disk space and are used in other modules.
 
 ### Usage
 Run as:
