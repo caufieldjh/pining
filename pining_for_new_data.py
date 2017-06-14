@@ -20,6 +20,8 @@ from datetime import date
 import pandas as pd
 from pandas import pivot_table
 
+from tqdm import *
+
 #Constants and Options
 directories = ["output","databases", "og_info"]
 
@@ -530,12 +532,19 @@ def map_prots_to_ogs(ids):
 		mapfilename = mapfile_list[0]
 	
 	#Load proteins to OG map file
+	print("Loading entries from map file...")
 	with open(mapfilename) as mapfile:
+		filelen = sum(1 for line in mapfile) -1
+		mapfile.seek(0)
+		pbar = tqdm(total=filelen)
 		for line in mapfile:
 			splitline = (line.rstrip()).split()
 			upid = splitline[0]
 			og = splitline[1]
 			prot_OG_maps[upid] = og
+			pbar.update(1)
+			
+	pbar.close()
 	
 	#Now look up input UPIDs
 	for upid in ids:
@@ -606,10 +615,7 @@ def search_int_file(ids, filename, db, target_ogs, all_og_map):
 		print("Searching %s interactions." % filelen)
 		
 		#Progbar
-		prog_width = filelen / 10000
-		sys.stdout.write("[%s]" % (" " * prog_width))
-		sys.stdout.flush()
-		sys.stdout.write("\b" * (prog_width+1))
+		pbar = tqdm(total=filelen)
 		
 		intactfile.seek(0)
 		intactfile.readline() #Skip header
@@ -640,10 +646,9 @@ def search_int_file(ids, filename, db, target_ogs, all_og_map):
 				all_og_int[i] = og_interaction
 			
 			i = i +1
+			pbar.update(1)
 			
-			if i % 10000 == 0:
-				sys.stdout.flush()
-				sys.stdout.write("#")
+		pbar.close()
 		
 		#Now search interactor pairs for target interactors
 		get_these_lines = set()
