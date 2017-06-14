@@ -561,9 +561,9 @@ def map_prots_to_ogs(ids):
 	
 	return target_OG_maps, prot_OG_maps, prots_without_OG
 	
-def search_int_file(ids, filename, db, target_ogs, all_og_map):
+def search_int_file(ids, filenames, db, target_ogs, all_og_map):
 	'''
-	Searches a PSI-MI TAB format set of interactions (filename) 
+	Searches a PSI-MI TAB format set or sets of interactions (filenames) 
 	for the Uniprot IDs provided (ids) and for and IDs with the same
 	OGs as the provided IDs, using target_ogs and the og map.
 	Indexes file first, searches IDs in the index, then returns
@@ -603,19 +603,92 @@ def search_int_file(ids, filename, db, target_ogs, all_og_map):
 	else:
 		os.chdir(directories[1])
 		
-	if db == "BioGRID":
-		#BioGRID has its own ID format.
-		#Will need to convert - work in progress.
-		pass
-
-	#Just load interactors from each interaction first
-	with open(filename) as intactfile:
+	if db == "full":
+		#Have multiple files to deal with - will load BioGRID first
+		#as it requires format conversions.
+		with open(filenames[1]) as biogridfile:
+			#Count the lines in the file first to determine how many PPI
+			filelen = sum(1 for line in biogridfile) -1
+			print("Searching %s interactions from BioGRID." % filelen)
+			print("Not functional yet.")
+			
+			#Progbar
+			pbar = tqdm(total=filelen)
+			
+			biogridfile.seek(0)
+			biogridfile.readline() #Skip header
+			
+			i = 1
+			#Load all interactor pairs as original IDs and as OGs
+			for line in biogridfile:
+				splitline = (line.rstrip()).split("\t")
+				#Only store if two Uniprot IDs
+				if (splitline[0].split(":"))[0] == "uniprotkb" and \
+					(splitline[1].split(":"))[0] == "uniprotkb":
+					interactorA = (splitline[0].split(":"))[1]
+					interactorB = (splitline[1].split(":"))[1]
+					interaction = (interactorA, interactorB)
+					all_int[i] = interaction
+					
+					if interactorA in all_og_map:
+						og_A = all_og_map[interactorA]
+					else:
+						og_A = interactorA
+					
+					if interactorB in all_og_map:
+						og_B = all_og_map[interactorB]
+					else:
+						og_B = interactorB
+						
+					og_interaction = (og_A, og_B)
+					all_og_int[i] = og_interaction
+				
+				i = i +1
+				pbar.update(1)
+				
+			pbar.close()
+			
+			#Now search interactor pairs for target interactors
+			get_these_lines = set()
+			
+			#Search protein IDs first
+			for line_num in all_int:
+				for interactor in all_int[line_num]:
+					if interactor in ids: #Option to search for match in both goes here
+						get_these_lines.add(line_num)
+						prot_match_count = prot_match_count +1
+						break
+			
+			#Now search OG IDs
+			for line_num in all_og_int:
+				for interactor in all_og_int[line_num]:
+					if interactor in target_ogs:
+						get_these_lines.add(line_num)
+						og_match_count = og_match_count +1
+						break
+			
+			biogridfile.seek(0)
+			biogridfile.readline() #Skip header 	
+			
+			j = 1
+			
+			#Add all interactions from the file
+			for line in biogridfile:
+				if j in get_these_lines:
+					complete_interactions.append((line.rstrip()).split("\t"))
+				j = j+1
+		
+	#Now load IntAct interactions or previous results
+	with open(filenames[0]) as intactfile:
 		#Count the lines in the file first to determine how many PPI
 		filelen = sum(1 for line in intactfile) -1
-		print("Searching %s interactions." % filelen)
+		print("Searching %s interactions from IntAct." % filelen)
 		
 		#Progbar
 		pbar = tqdm(total=filelen)
+		
+		all_int = {} 
+		all_og_int = {} 
 		
 		intactfile.seek(0)
 		intactfile.readline() #Skip header
@@ -653,13 +726,15 @@ def search_int_file(ids, filename, db, target_ogs, all_og_map):
 		#Now search interactor pairs for target interactors
 		get_these_lines = set()
 		
+		#Search protein IDs first
 		for line_num in all_int:
 			for interactor in all_int[line_num]:
-				if interactor in ids:
+				if interactor in ids: #Option to search for match in both goes here
 					get_these_lines.add(line_num)
 					prot_match_count = prot_match_count +1
 					break
-					
+		
+		#Now search OG IDs
 		for line_num in all_og_int:
 			for interactor in all_og_int[line_num]:
 				if interactor in target_ogs:
@@ -1102,19 +1177,11 @@ def main():
 	if not os.path.isfile(ppioutfilepath):
 		have_output = False
 		print("Did not find previous output file.")
-		print("Searching IntAct interactions for provided protein IDs.")
-		db = "IntAct"
+		print("Searching IntAct and BioGRID interactions for provided protein IDs.")
+		db = "full"
 		complete_interactions, prot_match_count, og_match_count, \
 			short_interactions \
-			= search_int_file(prot_ids, intactfilename, db, these_ogs, all_og_map)
-		#print("Searching BioGRID interactions for provided protein IDs.")
-		#db = "BioGRID"
-		#complete_interactions, prot_match_count, og_match_count, \
-			#short_interactions \
-			#= search_int_file(prot_ids, biogridfilename, db, these_ogs, all_og_map)
-			
-		##This should append interactions rather than replacing them
-		##And then will need to check for duplicates.
+			= search_int_file(prot_ids, [intactfilename, biogridfilename], db, these_ogs, all_og_map)
 	else:
 		have_output = True
 		print("Found existing interaction output file: %s" % ppioutfilename)
@@ -1122,7 +1189,7 @@ def main():
 		db = "previous"
 		complete_interactions, prot_match_count, og_match_count, \
 			short_interactions \
-			= search_int_file(prot_ids, ppioutfilename, db, these_ogs, all_og_map)
+			= search_int_file(prot_ids, [ppioutfilename], db, these_ogs, all_og_map)
 	
 	ppi_count = len(complete_interactions)
 	short_count = len(short_interactions)
