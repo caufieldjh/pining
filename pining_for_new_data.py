@@ -33,6 +33,36 @@ nowstring = (date.today()).isoformat()
 
 #Functions
 
+def build_bgid_conv_file(filename):
+	#Given the name of a BioGRID ID file, produces a new file
+	#specific to converting UniprotAC IDs to BioGRID IDs.
+	
+	outfilename = 'BIOGRID-conversion.txt'
+	
+	i = 0
+	with open(filename) as bgidfile:
+		filelen = sum(1 for line in bgidfile) -1
+		bgidfile.seek(0)
+		pbar = tqdm(total=filelen)
+		with open(outfilename, "w+b") as outfile:
+			outfile.write("BIOGRID_ID\tUNIPROT_ACCESSION\n")
+			for line in bgidfile:
+				pbar.update(1)
+				#Skip the header first
+				if line[0:10] != "BIOGRID_ID":
+					pass
+				else:
+					break
+			for line in bgidfile:
+				pbar.update(1)
+				splitline = line.split("\t")
+				if splitline[2] == "UNIPROT-ACCESSION":
+					outline = "%s\t%s\n" % (splitline[0], splitline[1])
+					outfile.write(outline)
+	
+	pbar.close()
+	return outfilename
+			
 def load_prot(filename):
 	'''
 	Obtains the protein IDs to search for from a list of proteins
@@ -143,6 +173,7 @@ def get_ppi_db(name):
 	'''
 	Download either IntAct or BioGRID local copies.
 	Extracts to the 'databases' folder.
+	Or, if we have them already, locate them
 	'''
 	
 	if name == "IntAct":
@@ -152,7 +183,8 @@ def get_ppi_db(name):
 	if name == "BioGRID":
 		baseURL = "https://thebiogrid.org/downloads/archives/Latest%20Release/"
 		dbfilename = "BIOGRID-ALL-LATEST.mitab.zip"
-		
+		bgidfilename = "BIOGRID-IDENTIFIERS-LATEST.tab.zip" #BioGRID internal ID conversions
+
 	dbfilepath = baseURL + dbfilename
 	
 	#Database names may change
@@ -162,6 +194,9 @@ def get_ppi_db(name):
 		biogrid_db_list = glob.glob('BIOGRID-ALL-*.mitab.txt')
 		if len(biogrid_db_list) > 0:
 			outfilename = biogrid_db_list[0]
+		else: 
+			outfilename = "BIOGRID-ALL-LATEST.mitab.txt" 
+			#This won't actually be the filename
 		
 	dl_dbfile = True	#If true, we need to download, and this is the default
 	if os.path.isfile(dbfilename): 
@@ -175,6 +210,14 @@ def get_ppi_db(name):
 		print("Found database file on disk: %s" % outfilename)
 		decompress_dbfile = False
 		dl_dbfile = False
+		
+	if name == "BioGRID": #May need the BioGRID ID conversion file
+		biogrid_idfile_list = glob.glob('BIOGRID-IDENTIFIERS-*.tab.txt')
+		if len(biogrid_idfile_list) > 0:
+			print("Found BioGRID ID conversion file: %s" % biogrid_idfile_list[0])
+			dl_bgidfile = False
+		else:
+			dl_bgidfile = True
 		
 	if dl_dbfile:
 		print("Downloading %s database file." % name)
@@ -211,6 +254,39 @@ def get_ppi_db(name):
 						break #Just want one file.
 		except zipfile.BadZipfile as e:
 			sys.exit("Something is wrong with this database file.\n"
+						"Please remove it and re-download.\n"
+						"Error: %s" % e)
+						
+	if dl_bgidfile:
+		print("Downloading and decompressing BioGRID ID conversion file.")
+		dbfilepath = baseURL + bgidfilename
+		print("Downloading from %s" % dbfilepath)
+		response = urllib2.urlopen(dbfilepath)
+		
+		compressed_file = open(os.path.basename(dbfilepath), "w+b")
+		#Start local compressed file
+		chunk = 1048576
+		while 1:
+			data = (response.read(chunk)) #Read one Mb at a time
+			compressed_file.write(data)
+			if not data:
+				print("\n%s file download complete." % bgidfilename)
+				compressed_file.close()
+				break
+			sys.stdout.flush()
+			sys.stdout.write(".")
+		
+		try:
+			with zipfile.ZipFile(bgidfilename, "r") as infile:
+				for filename in infile.namelist():
+					print(filename)
+					outfile = open(filename, 'w+b')
+					outfile.write(infile.read(filename))
+					outfile.close()
+					outfilename = filename
+					break #Just want one file.
+		except zipfile.BadZipfile as e:
+			sys.exit("Something is wrong with the BioGRID ID file.\n"
 						"Please remove it and re-download.\n"
 						"Error: %s" % e)
 					
@@ -606,6 +682,9 @@ def search_int_file(ids, filenames, db, target_ogs, all_og_map):
 	if db == "full":
 		#Have multiple files to deal with - will load BioGRID first
 		#as it requires format conversions.
+		#Note that prot_match_count and og_match_count may include 
+		#double counts if the same interaction is present
+		#In both BioGRID and IntAct
 		with open(filenames[1]) as biogridfile:
 			#Count the lines in the file first to determine how many PPI
 			filelen = sum(1 for line in biogridfile) -1
@@ -1108,7 +1187,28 @@ def main():
 		print("Found BioGRID database file.")
 		biogridfilename = biogrid_db_list[0]
 	
+	#Check for BioGRID original ID file or new conversion file
+	bgidconvfilename = 'BIOGRID-conversion.txt'
+	if os.path.isfile(bgidconvfilename):
+		print("Found BioGRID ID conversion map.")
+		
+	else:
+		bgidfile_list = glob.glob('BIOGRID-IDENTIFIERS-*.tab.txt')
+		if len(bgidfile_list) > 1:
+			sys.exit("Found more than one BioGRID ID file.\n"
+						"Check for duplicates.")
+						
+		if len(bgidfile_list) == 0:
+			sys.exit("No BioGRID ID file found. Please re-download database "
+					"to ensure IDs match database version.")
+	
+		if len(bgidfile_list) == 1:
+			print("Found BioGRID ID file. Using it to build ID conversion map...")
+			bgidfile = bgidfile_list[0]
+			bgidconvfilename = build_bgid_conv_file(bgidfile)
+	
 	biogridfile_loc = os.path.join(directories[1], biogridfilename)
+	bgidconvfile_loc = os.path.join(directories[1], bgidconvfilename)
 		
 	os.chdir("..")
 		
