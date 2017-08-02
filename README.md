@@ -54,10 +54,6 @@ will be interpreted as "for M3W421, bags and pos is 0.6133" and so on.
 
 * An annotation file containing all interactors from the input set with interactions found from the database search. These annotations include eggNOG OG assignments where available.
 
-## pining_for_annotation.py
-
-Will provide methods for applying additional annotations, both from databases and from files provided by the user, to proteins and their interactions, given the output from pining_for_new_data.py.
-
 ## pining_for_turnover.py
 
 Will provide methods for comparing proteins and their interactions in terms of protein turnover dynamics, given proteomics data sets expressing protein dynamics in terms of median values across multiple experimental conditions and groups (e.g., in vivo proteomes from multiple animal strains).
