@@ -1032,29 +1032,41 @@ def show_graph(interactions):
 	base = 'http://' + ip + ':' + port + '/v1/'
 	headers = {'Content-Type': 'application/json'}
 	
+	pedges = ""
+	oedges = ""
+	
 	try:
 		res = requests.get(base)
 		requests.delete(base + 'networks')
-		empty_network = {
-	        'data': {
-	            'name': 'placeholder'
-	        },
-	        'elements': {
-	            'nodes':[],
-	            'edges':[]
-	        }
-		}
 		
-		res = requests.post(base + 'networks?collection=pining', 
-			data=json.dumps(empty_network), headers=headers)
-		net_suid = res.json()['networkSUID']
-		print('New network has SUID ' + str(net_suid))
+		#Assemble the input
+		for ppi in interactions:
+			new_pedge = "%s\t%s" % (ppi[0], ppi[1])
+			pedges = pedges + new_pedge + "\n"
+			new_oedge = "%s\t%s" % (ppi[2], ppi[3])
+			oedges = oedges + new_oedge + "\n"
+		
+		print("Sending protein network to Cytoscape.")
+		
+		res = requests.post(base + 'networks?format=edgelist&collection=pining&title=Proteins', 
+							data=pedges, headers=headers)
+							
+		p_res_dict = res.json()
+		p_suid = p_res_dict['networkSUID']
+		requests.get(base + 'apply/layouts/circular/' + str(p_suid))
+		
+		print("Sending OG network to Cytoscape.")
+		
+		res = requests.post(base + 'networks?format=edgelist&collection=pining&title=OGs', 
+							data=oedges, headers=headers)
+		
+		o_res_dict = res.json()
+		o_suid = o_res_dict['networkSUID']
+		requests.get(base + 'apply/layouts/circular/' + str(o_suid))
+		
 	except requests.exceptions.ConnectionError:
 		print("Connection error - Cytoscape may not be running.")
 		return False
-	
-	for interaction in interactions:
-		print(interaction)
 			
 #Main
 def main():
@@ -1292,9 +1304,8 @@ def main():
 	for output_type in outputs:
 		print("%s: %s\n" % (output_type, outputs[output_type]))
 		
-	print("Visualizing graph...")
 	show_graph(short_interactions)
-			
+
 	sys.exit()
 
 if __name__ == "__main__":
