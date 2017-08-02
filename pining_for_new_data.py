@@ -17,6 +17,9 @@ import argparse
 import glob, gzip, operator, os, random, re, sys, urllib2, zipfile
 from datetime import date
 
+import requests #For using Cytoscape's cyREST API
+import json
+
 import pandas as pd
 from pandas import pivot_table
 
@@ -985,138 +988,6 @@ def save_interactions(filename, ppi, mode):
 		
 	os.chdir("..")
 			
-def graph_interactions(ids, unique_ppi, unique_og_ppi, prot_dict, 
-						og_map, pub_int_counts, og_pub_int_counts,
-						con_limit, og_con_limit):
-	'''
-	Builds the network graph
-	This just works with interactions between
-	target interactors for now.
-	ids is the set of target interactors.
-	Produces high confidence graphs as well using counts of PPI
-	observations (i.e., if a PPI is seen in multiple publications).
-	Uses the OG map to also produce OG network variants.
-
-	con_limit is the number of publications a PPI must be observed in
-	to be included in the high confidence graph.
-	
-	Exports figures of the graph visualizations
-	and file of each graph as an edge list, along with the count
-	of publications observing each interaction
-	(this is a bit muddled with OGs, for now)
-	and the med.k values from all_protein_k.txt
-	for each mouse strain and group.
-	
-	The full prot_dict is passed here for future use.
-	'''
-	
-	def draw_graph(nxgraph, name, node_color):
-		#Subfunction for drawing graph with pygraphviz.
-		A = to_agraph(nxgraph)
-		A.node_attr['color'] = node_color
-		A.draw(name, prog="sfdp")
-		
-	ppi = [] #All target-only protein interactions as tuples
-	hc_ppi = [] #High confidence interactions, target-only, based
-				#on number of publication observed in
-	og_int = [] #All target-only, OG-mapped interactions as tuples
-				#These are not sets as we are interested in 
-				#interactions seen multiple times.
-	hc_og_int = [] #High confidence interactions, target-only,
-					#OG-mapped, based on number of publication 
-					#observed in
-	exp_OG = [] #All target-only, OG-mapped interactions as tuples,
-				#expanded to multiple interacting species
-				#(so some interactions are predictions)
-	exp_hc_og_int = [] #All high-condfidence, target-only, OG-mapped 
-						#interactions as tuples, expanded to multiple 
-						#interacting species 
-						#(so some interactions are predictions)
-	
-	#Set up the value fields we will use based on prot_dict
-	
-	#Ensuring that the graph only includes PPI among target interactors
-	for interaction in unique_ppi:
-		if interaction[0] in ids and interaction[1] in ids:
-			ppi.append((interaction[0], interaction[1]))
-			og_int.append((og_map[interaction[0]], og_map[interaction[1]],
-							pub_int_counts[interaction]))
-			if pub_int_counts[interaction] >= con_limit:
-				hc_ppi.append((interaction[0], interaction[1]))
-				hc_og_int.append((og_map[interaction[0]], og_map[interaction[1]],
-							pub_int_counts[interaction]))
-	
-	#The OG-expanded graphs may include non-target interactors
-	#(both those shared in OGs and those interacting with those
-	#shared in OGs)
-	#for now, just because I haven't filtered any further
-	for interaction in unique_og_ppi:
-		og_interaction = []
-		for interactor in interaction:
-			try:
-				og_interaction.append(og_map[interactor])
-			except KeyError:
-				og_interaction.append(interactor)
-		exp_OG.append((og_interaction[0], og_interaction[1],
-							og_pub_int_counts[interaction]))
-		if og_pub_int_counts[interaction] >= og_con_limit:
-			hc_og_int.append((og_interaction[0], og_interaction[1],
-							og_pub_int_counts[interaction]))
-		
-	for input_type in ["protein", "high_confidence_protein", "OG",
-						"high_confidence_OG","exp_OG",
-						"exp_high_confidence_OG"]:
-		G=nx.Graph()
-		pubs = ""
-		if input_type == "protein":
-			for interaction in ppi:
-				G.add_edge(interaction[0], interaction[1], 
-							pubs = pub_int_counts[interaction])
-			node_color = "red"
-		if input_type == "high_confidence_protein":
-			for interaction in hc_ppi:
-				G.add_edge(interaction[0], interaction[1], 
-							pubs = pub_int_counts[interaction])
-			node_color = "red"
-		if input_type in ["OG", "high_confidence_OG",
-								"exp_OG", "exp_high_confidence_OG"]:
-			if input_type == "OG":
-				for interaction in og_int:
-					G.add_edge(interaction[0], interaction[1], 
-								pubs = interaction[2])
-			elif input_type == "high_confidence_OG":
-				for interaction in hc_og_int:
-					G.add_edge(interaction[0], interaction[1], 
-								pubs = interaction[2])
-			elif input_type == "exp_OG":
-				for interaction in exp_OG:
-					G.add_edge(interaction[0], interaction[1], 
-								pubs = interaction[2])
-			elif input_type == "exp_high_confidence_OG":
-				for interaction in exp_hc_og_int:
-					G.add_edge(interaction[0], interaction[1], 
-								pubs = interaction[2])
-			node_color = "green"
-		print("The %s graph has %d nodes, %d edges, and %d connected components." \
-			% (input_type, nx.number_of_nodes(G), nx.number_of_edges(G),
-				nx.number_connected_components(G)))
-		if input_type in ["high_confidence_protein",
-							"high_confidence_OG",
-							"exp_high_confidence_OG"]:
-			print("\tHigh confidence indicates PPI observed in at least "
-					"%s different publications (%s for OG-expanded graphs)." 
-					% (con_limit, og_con_limit))
-		
-		print("Building layout and drawing %s graph..." % input_type)
-		data_fields = ["pubs"]
-		
-		os.chdir(outfiledir)
-		nx.write_edgelist(G, "heart_%s_edgelist.csv" % input_type, 
-							delimiter=",", data=data_fields)
-							
-		draw_graph(G, "heart_%s_graph.svg" % input_type, node_color)
-		os.chdir("..")
-
 def load_psi_tab_header():
 	#Loads the PSI-MI TAB header format from a file.
 	#Can also get this from IntAct database file 
@@ -1151,6 +1022,39 @@ def save_wide_data(filename, prot_frame, groups):
 	prot_frame_wide.to_csv(filename, sep='\t', na_rep='NA')
 		
 	os.chdir("..")
+	
+def show_graph(interactions):
+	#Takes interactions in short format and visualizes with Cytoscape
+	#Returns False if it fails, specifically if it can't produce the
+	#graph
+	port = '1234'
+	ip = 'localhost'
+	base = 'http://' + ip + ':' + port + '/v1/'
+	headers = {'Content-Type': 'application/json'}
+	
+	try:
+		res = requests.get(base)
+		requests.delete(base + 'networks')
+		empty_network = {
+	        'data': {
+	            'name': 'placeholder'
+	        },
+	        'elements': {
+	            'nodes':[],
+	            'edges':[]
+	        }
+		}
+		
+		res = requests.post(base + 'networks?collection=pining', 
+			data=json.dumps(empty_network), headers=headers)
+		net_suid = res.json()['networkSUID']
+		print('New network has SUID ' + str(net_suid))
+	except requests.exceptions.ConnectionError:
+		print("Connection error - Cytoscape may not be running.")
+		return False
+	
+	for interaction in interactions:
+		print(interaction)
 			
 #Main
 def main():
@@ -1387,109 +1291,11 @@ def main():
 	print("Complete. See output files:\n")
 	for output_type in outputs:
 		print("%s: %s\n" % (output_type, outputs[output_type]))
+		
+	print("Visualizing graph...")
+	show_graph(short_interactions)
 			
 	sys.exit()
-	
-	#Testing cutoff
-	
-	#Get top lists of them
-	#Get counts first
-	taxo_counts = {key: len(value) for key, value in taxo_dict.items()}
-	pub_counts = {key: len(value) for key, value in pub_dict.items()}
-	taxo_int_counts = {key: len(value) for key, value in taxo_ints.items()}
-	pub_int_counts = {key: len(value) for key, value in pub_ints.items()}
-
-	high_taxo_dict = sorted(taxo_counts.items(), key=operator.itemgetter(1),
-								reverse=True)[0:15]
-	high_pub_dict = sorted(pub_counts.items(), key=operator.itemgetter(1),
-								reverse=True)[0:15]
-	high_taxo_int_dict = sorted(taxo_int_counts.items(), key=operator.itemgetter(1),
-								reverse=True)[0:15]
-	high_pub_int_dict = sorted(pub_int_counts.items(), key=operator.itemgetter(1),
-								reverse=True)[0:15]
-								
-	print("\nTaxonomic breakdown:\n")
-	print("Taxons\t\t\t\t\tTotal Interactions")
-	for taxon in high_taxo_dict:
-		split_taxon = taxon[0].split("\t")
-		taxidA = (split_taxon[0].split("|"))[0]
-		taxidB = (split_taxon[1].split("|"))[0]
-		print("%s\tvs.\t%s\t\t\t%s" % (taxidA, taxidB, taxon[1]))
-	
-	'''
-	This count isn't useful unless it's done with OG vs. OG interactions.
-	'''	
-	#print("\nInteractions seen in the most taxons:")
-	#print("Interaction\t\t\tCount of Different Taxons")
-	#for count in high_taxo_int_dict:
-	#	print("%s\t\t%s" % (count[0], count[1]))
-	
-	print("\nPublication breakdown:\n")
-	print("Publication\t\tPMID\t\tTotal Interactions")
-	for pub in high_pub_dict:
-		print("%s\t\t%s" % (pub[0], pub[1]))
-	
-	print("\nInteractions (nonredundant) seen in the most publications:")
-	print("Interaction\t\t\tCount of Different Publications")
-	for count in high_pub_int_dict:
-		print("%s\t\t%s" % (count[0], count[1]))
-		
-	#Save the matching set if we don't have one yet
-	if have_output == 0:
-		outfilename = "matching_ppi.txt"
-		print("\nSaving filtered interactions to %s." % outfilename)
-		save_interactions(clean_interactions, outfilename)
-	
-	'''
-	OG-expanded interaction networks below.
-	'''
-	
-	#Get top lists of them
-	#Get counts first
-	og_taxo_counts = {key: len(value) for key, value in og_taxo_dict.items()}
-	og_pub_counts = {key: len(value) for key, value in og_pub_dict.items()}
-	og_taxo_int_counts = {key: len(value) for key, value in og_taxo_ints.items()}
-	og_pub_int_counts = {key: len(value) for key, value in og_pub_ints.items()}
-
-	og_high_taxo_dict = sorted(og_taxo_counts.items(), key=operator.itemgetter(1),
-								reverse=True)[0:15]
-	og_high_pub_dict = sorted(og_pub_counts.items(), key=operator.itemgetter(1),
-								reverse=True)[0:15]
-	og_high_taxo_int_dict = sorted(og_taxo_int_counts.items(), key=operator.itemgetter(1),
-								reverse=True)[0:15]
-	og_high_pub_int_dict = sorted(og_pub_int_counts.items(), key=operator.itemgetter(1),
-								reverse=True)[0:15]
-								
-	print("\nTaxonomic breakdown:\n")
-	print("Taxons\t\t\t\t\tTotal Interactions")
-	for taxon in og_high_taxo_dict:
-		split_taxon = taxon[0].split("\t")
-		taxidA = (split_taxon[0].split("|"))[0]
-		taxidB = (split_taxon[1].split("|"))[0]
-		print("%s\tvs.\t%s\t\t\t%s" % (taxidA, taxidB, taxon[1]))
-	
-	print("\nInteractions seen in the most taxons:")
-	print("Interaction\t\t\tCount of Different Taxons")
-	for count in og_high_taxo_int_dict:
-		print("%s\t\t%s" % (count[0], count[1]))
-	
-	print("\nPublication breakdown:\n")
-	print("Publication\t\tPMID\t\tTotal Interactions")
-	for pub in og_high_pub_dict:
-		print("%s\t\t%s" % (pub[0], pub[1]))
-	
-	print("\nInteractions (nonredundant) seen in the most publications:")
-	print("Interaction\t\t\tCount of Different Publications")
-	for count in og_high_pub_int_dict:
-		print("%s\t\t%s" % (count[0], count[1]))
-		
-	#Build and visualize ALL graphs now
-	print("\n\nBuilding and visualizing graphs.")
-	graph_interactions(prot_ids, unique, og_unique, prot_dict, all_og_map, 
-						pub_int_counts, og_pub_int_counts, 
-						con_limit, og_con_limit)
-	
-	print("All done.")
 
 if __name__ == "__main__":
 	sys.exit(main())
