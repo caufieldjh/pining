@@ -708,7 +708,9 @@ def search_int_file(ids, filenames, db, target_ogs, all_og_map, bgidconvmap):
 						
 	short_interactions = [] #Short form of interaction list, where each
 							#interaction has the form:
-							#[protA, protB, OG_A, OG_B, pub_count, pub_ids]
+							#[protA, protB, OG_A, OG_B, 
+							#	pub_count, pub_ids,
+							#	pred_type_A, pred_type_B]
 							
 	if db == "previous":
 		os.chdir(directories[0])
@@ -926,7 +928,24 @@ def search_int_file(ids, filenames, db, target_ogs, all_og_map, bgidconvmap):
 		else:
 			og_B = prot_B
 		
-		values = [prot_A, prot_B, og_A, og_B, pub_count, pub_ids]
+		if prot_A in ids:
+			pred_type_A = "Target"
+		else:
+			if og_A in target_ogs:
+				pred_type_A = "Shared_OG"
+			else:
+				pred_type_A = "Other"
+			
+		if prot_B in ids:
+			pred_type_B = "Target"
+		else:
+			if og_B in target_ogs:
+				pred_type_B = "Shared_OG"
+			else:
+				pred_type_B = "Other"
+		
+		values = [prot_A, prot_B, og_A, og_B, pub_count, pub_ids, 
+					pred_type_A, pred_type_B]
 		
 		short_interactions.append(values)
 	
@@ -975,7 +994,7 @@ def save_interactions(filename, ppi, mode):
 	if mode == "tab":
 		header = load_psi_tab_header()
 	if mode == "short":
-		header = "prot_A\tprot_B\tOG_A\tOG_B\tPubCount\tPublications"
+		header = "prot_A\tprot_B\tOG_A\tOG_B\tPubCount\tPublications\tType_A\tType_B"
 	
 	os.chdir(directories[0])
 	
@@ -1065,7 +1084,8 @@ def show_graph(interactions):
 		requests.get(base + 'apply/layouts/circular/' + str(o_suid))
 		
 	except requests.exceptions.ConnectionError:
-		print("Connection error - Cytoscape may not be running.")
+		print("Tried to output networks to Cytoscape but it " 
+				"may not be running.")
 		return False
 			
 #Main
@@ -1303,7 +1323,12 @@ def main():
 	print("Complete. See output files:\n")
 	for output_type in outputs:
 		print("%s: %s\n" % (output_type, outputs[output_type]))
-		
+	
+	print("In the short interaction file, interactors may be \n"
+			"Target if included in the input file, \n"
+			"Shared_OG if in the same OG as a protein in the input,\n"
+			"or Other if not in a shared OG.\n")
+	 
 	show_graph(short_interactions)
 
 	sys.exit()
