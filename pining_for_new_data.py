@@ -283,7 +283,7 @@ def get_ppi_db(name):
 						"Please remove it and re-download.\n"
 						"Error: %s" % e)
 						
-	if dl_bgidfile:
+	if name == "BioGRID" and dl_bgidfile:
 		print("Downloading and decompressing BioGRID ID conversion file.")
 		dbfilepath = baseURL + bgidfilename
 		print("Downloading from %s" % dbfilepath)
