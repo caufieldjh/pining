@@ -17,7 +17,7 @@ Downloads OG mapping files from EggNOG 4.5 (http://eggnogdb.embl.de). Uses base 
 
 ### Requirements 
 Requires [pandas](http://pandas.pydata.org/).
-Also requires [Neo4j](https://neo4j.com/) - please install it and [py2neo](http://py2neo.org/v3/).
+Also requires [Neo4j](https://neo4j.com/) - please install it and [py2neo](http://py2neo.org/v3/). Note that Neo4j requires the Java 8 runtime  - [see its documentation for more details](https://neo4j.com/docs/operations-manual/current/installation/linux/debian/). Setting up and accessing the Neo4j database will require administrative or sudo privileges on your system. 
 
 The combined databases and conversion files require ~10 Gb of disk space and are used in other modules.
 
