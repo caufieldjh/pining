@@ -24,7 +24,7 @@ import pandas as pd
 from pandas import pivot_table
 
 import py2neo
-from py2neo import Graph, Node, Relationship
+from py2neo import authenticate, Graph, Node, Relationship
 
 from tqdm import *
 
@@ -1098,29 +1098,52 @@ def create_graphdb(interactions):
 	#"interacts with" relationships are between proteins,
 	#but "is a member of" relationships are between proteins and OGs.
 	
+	#Assemble the input
+	prot_list = []
+	og_list = []
+	for ppi in interactions:
+		for name in (ppi[0], ppi[1]):
+			prot_list.append(name)
+		for name in (ppi[2], ppi[3]):
+			og_list.append(name)
+	
+	#Unique names only
+	prot_list = list(set(prot_list))
+	og_list = list(set(og_list))
+	node_dict = {}
+	
+	#Start the service if needed
 	os.system("sudo service neo4j start")
+	authenticate("localhost:7474", "neo4j", "pining")
 	
 	try:
-		g = Graph("http://neo4j:pining@localhost:7474")
+		g = Graph("http://localhost:7474/db/data/")
 		g.delete_all()
 		tx = g.begin()
 
-		#Assemble the input and graph
+		#Assemble the nodes in the graph
+		print("Assembling nodes.")
+		for name in prot_list:
+			this_node = Node("protein", name=name)
+			node_dict[name] = this_node
+			tx.create(this_node)
+		for name in og_list:
+			this_node = Node("OG", name=name)
+			node_dict[name] = this_node
+			tx.create(this_node)
+
+		#Assemble relationships in the graph
+		#Assumes each interaction involves one PPI and 2 OGs, 
+		#for 3 total realationships at most
+		print("Assembling relationships.")
 		pbar = tqdm(total=len(interactions)*3) 
-		#Assumes each interaction involves 2 OGs, for 3 total realationships 
 		for ppi in interactions:
-			a = Node("protein", name=ppi[0])
-			b = Node("protein", name=ppi[1])
-			og_a = Node("OG", name=ppi[2])
-			og_b = Node("OG", name=ppi[3])
-			for node in [a, b, og_a, og_b]:
-				tx.create(node)
-			ab = Relationship(a, "interacts with", b)
-			a_is_og = Relationship(a, "is a member of", og_a)
-			b_is_og = Relationship(b, "is a member of", og_b)
-			for relationship in [ab, a_is_og, b_is_og]:
-				tx.create(relationship)
-				pbar.update(1)
+			tx.create(Relationship(node_dict[ppi[0]], "interacts with", node_dict[ppi[1]]))
+			pbar.update(1)
+			tx.create(Relationship(node_dict[ppi[0]], "is a member of", node_dict[ppi[2]]))
+			pbar.update(1)
+			tx.create(Relationship(node_dict[ppi[1]], "is a member of", node_dict[ppi[3]]))
+			pbar.update(1)
 		tx.commit()
 		
 		pbar.close()
@@ -1129,6 +1152,9 @@ def create_graphdb(interactions):
 	except (py2neo.packages.httpstream.http.SocketError,
 			py2neo.database.status.Unauthorized) as e:
 		print("**Error accessing the Neo4j database: %s" % e)
+		print("**Please try accessing the server at http://localhost:7474/")
+		print("**If this is a new database, you may need to set a password.")
+		print("**Please use the username \"neo4j\" and the password \"pining\".\n")
 	
 #Main
 def main():
