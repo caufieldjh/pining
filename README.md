@@ -17,7 +17,7 @@ Downloads OG mapping files from EggNOG 4.5 (http://eggnogdb.embl.de). Uses base 
 
 ### Requirements 
 Requires [pandas](http://pandas.pydata.org/).
-Also requires Neo4j - please install it and [py2neo](http://py2neo.org/v3/).
+Also requires [Neo4j](https://neo4j.com/) - please install it and [py2neo](http://py2neo.org/v3/).
 
 The combined databases and conversion files require ~10 Gb of disk space and are used in other modules.
 
