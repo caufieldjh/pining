@@ -1138,11 +1138,11 @@ def create_graphdb(interactions):
 		print("Assembling relationships.")
 		pbar = tqdm(total=len(interactions)*3) 
 		for ppi in interactions:
-			tx.create(Relationship(node_dict[ppi[0]], "interacts with", node_dict[ppi[1]]))
+			tx.create(Relationship(node_dict[ppi[0]], "interacts_with", node_dict[ppi[1]]))
 			pbar.update(1)
-			tx.create(Relationship(node_dict[ppi[0]], "is a member of", node_dict[ppi[2]]))
+			tx.create(Relationship(node_dict[ppi[0]], "member_of", node_dict[ppi[2]]))
 			pbar.update(1)
-			tx.create(Relationship(node_dict[ppi[1]], "is a member of", node_dict[ppi[3]]))
+			tx.create(Relationship(node_dict[ppi[1]], "member_of", node_dict[ppi[3]]))
 			pbar.update(1)
 		tx.commit()
 		
