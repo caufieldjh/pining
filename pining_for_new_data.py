@@ -23,6 +23,9 @@ import json
 import pandas as pd
 from pandas import pivot_table
 
+import py2neo
+from py2neo import Graph, Node, Relationship
+
 from tqdm import *
 
 #Constants and Options
@@ -1084,10 +1087,49 @@ def show_graph(interactions):
 		requests.get(base + 'apply/layouts/circular/' + str(o_suid))
 		
 	except requests.exceptions.ConnectionError:
-		print("Tried to output networks to Cytoscape but it " 
+		print("**Tried to output networks to Cytoscape but it " 
 				"may not be running.")
 		return False
-			
+
+def create_graphdb(interactions):
+	#Takes interactions in short format and produces a graph database
+	#using Neo4j through py2neo.
+	#This database includes both OG and protein information, such that
+	#"interacts with" relationships are between proteins,
+	#but "is a member of" relationships are between proteins and OGs.
+	
+	os.system("sudo service neo4j start")
+	
+	try:
+		g = Graph("http://neo4j:pining@localhost:7474")
+		g.delete_all()
+		tx = g.begin()
+
+		#Assemble the input and graph
+		pbar = tqdm(total=len(interactions)*3) 
+		#Assumes each interaction involves 2 OGs, for 3 total realationships 
+		for ppi in interactions:
+			a = Node("protein", name=ppi[0])
+			b = Node("protein", name=ppi[1])
+			og_a = Node("OG", name=ppi[2])
+			og_b = Node("OG", name=ppi[3])
+			for node in [a, b, og_a, og_b]:
+				tx.create(node)
+			ab = Relationship(a, "interacts with", b)
+			a_is_og = Relationship(a, "is a member of", og_a)
+			b_is_og = Relationship(b, "is a member of", og_b)
+			for relationship in [ab, a_is_og, b_is_og]:
+				tx.create(relationship)
+				pbar.update(1)
+		tx.commit()
+		
+		pbar.close()
+		print("Access graph at http://localhost:7474")
+		
+	except (py2neo.packages.httpstream.http.SocketError,
+			py2neo.database.status.Unauthorized) as e:
+		print("**Error accessing the Neo4j database: %s" % e)
+	
 #Main
 def main():
 	prot_dict = {} #Keys are unique protein IDs.
@@ -1320,7 +1362,7 @@ def main():
 		outputs["Matching short interactions with OGs and publication counts"] \
 			= shortoutfilename
 	
-	print("Complete. See output files:\n")
+	print("See output files:\n")
 	for output_type in outputs:
 		print("%s: %s\n" % (output_type, outputs[output_type]))
 	
@@ -1329,9 +1371,12 @@ def main():
 			"Shared_OG if in the same OG as a protein in the input,\n"
 			"or Other if not in a shared OG.\n")
 	 
+	print("Saving graph database.")
+	create_graphdb(short_interactions)
+	 
 	show_graph(short_interactions)
 
-	sys.exit()
+	print("Complete.")
 
 if __name__ == "__main__":
 	sys.exit(main())
