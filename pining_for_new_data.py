@@ -4,10 +4,17 @@
 A tool for retrieving protein-protein interaction data sets, using
 a list of proteins to search for.
 As the number of returned interactions may be quite large,
-IntAct and BioGRID are searched as local databases.
+IntAct and BioGRID are searched as local files.
 
 Produces combined, annotated versions of the network of the 
-retrieved interactions.
+retrieved interactions in several different formats.
+
+Saves interactions and corresponding orthologous groups to a graph
+database (Neo4j). Tries to start the Neo4j server if it isn't already
+running. Deletes all existing records in the database at each run.
+
+Also visualizes graph in Cytoscape, though only if it is running.
+
 
 '''
 __author__= "Harry Caufield"
