@@ -21,11 +21,12 @@ __author__= "Harry Caufield"
 __email__ = "j.harry.caufield@gmail.com"
 
 import argparse
-import glob, gzip, operator, os, random, re, sys, urllib2, zipfile
+import glob, gzip, operator, os, random, re, sys, time, urllib2, zipfile
 from datetime import date
 
 import requests #For using Cytoscape's cyREST API
 import json
+import subprocess
 
 import pandas as pd
 from pandas import pivot_table
@@ -1098,6 +1099,14 @@ def show_graph(interactions):
 				"may not be running.")
 		return False
 
+def is_service_running(name):
+	#Checks if a linux service is running.
+	#See https://stackoverflow.com/questions/17541044/how-can-i-make-the-python-program-to-check-linux-services
+    with open(os.devnull, 'wb') as hide_output:
+        exit_code = subprocess.Popen(['service', name, 'status'], \
+			stdout=hide_output, stderr=hide_output).wait()
+        return exit_code == 0
+
 def create_graphdb(interactions):
 	#Takes interactions in short format and produces a graph database
 	#using Neo4j through py2neo.
@@ -1120,7 +1129,10 @@ def create_graphdb(interactions):
 	node_dict = {}
 	
 	#Start the service if needed
-	os.system("sudo service neo4j start")
+	if not is_service_running('neo4j'):
+		print("Starting neo4j service....")
+		os.system("sudo service neo4j start")
+		time.sleep(5)
 	authenticate("localhost:7474", "neo4j", "pining")
 	
 	try:
