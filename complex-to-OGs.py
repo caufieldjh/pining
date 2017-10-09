@@ -48,7 +48,9 @@ def find_complexes_in_edgelist(edgelist_filename, og_cplxs):
 	#then for each interaction, try to find it or its reciprocal within
 	#the provided edgelist.
 	for cplx in og_cplxs:
-		raw_score = 0
+		raw_score = 0 #Total matches, even if it's the same interaction
+		unique_score = 0 #Total unique matches
+		matched_already = []
 		#print(cplx)
 		these_poss_interactions = set(itertools.combinations(og_cplxs[cplx], 2))
 		#print(these_poss_interactions)
@@ -59,8 +61,11 @@ def find_complexes_in_edgelist(edgelist_filename, og_cplxs):
 				if edges[edge] in (poss_interaction, reversed(poss_interaction)):
 					#print("Found match: %s" % str(poss_interaction))
 					raw_score = raw_score +1
+					if poss_interaction not in matched_already:
+						unique_score = unique_score +1
+						matched_already.append(poss_interaction)
 		if total_poss_int > 0:
-			fract_score = raw_score / total_poss_int
+			fract_score = unique_score / total_poss_int
 		else:
 			fract_score = 0
 		cplx_match_scores[cplx] = (raw_score, fract_score)
