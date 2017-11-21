@@ -16,6 +16,9 @@ __email__ = "j.harry.caufield@gmail.com"
 
 import glob, os, subprocess, sys, time
 
+import pandas as pd
+from pandas import pivot_table
+
 import py2neo
 from py2neo import authenticate, Graph, Node, Relationship
 
@@ -55,7 +58,8 @@ def access_graphdb():
 		sys.exit()
 	
 def get_wide_data():
-	#Returns the wide data file produced by pining_for_new_data
+	#Returns contents of the wide data file produced by 
+	#pining_for_new_data
 	
 	os.chdir(directories[0])
 	
@@ -65,11 +69,17 @@ def get_wide_data():
 		sys.exit("More than one wide format data file found. "
 					"Only one is necessary.")
 	if len(wide_file_list) == 0:
-		sys.exit("Could not find a wide format data file.")
-	
+		sys.exit("Could not find a wide format data file.\n"
+					"You may need to run the new data module first.")
+					
 	wide_file_name = wide_file_list[0]
+	print("Loading data from %s." % wide_file_name)
 	
-	return wide_file_name
+	data = pd.read_csv(wide_file_name, sep='\t', skipinitialspace=True, 
+						header=[0,1,2], index_col=0)
+	#print(data)
+	
+	return data
 	
 def is_service_running(name):
 	#Checks if a linux service is running.
@@ -84,8 +94,7 @@ def main():
 	print("** pining - turnover module **")
 	
 	print("Searching for wide format data file.")
-	wide_file_name = get_wide_data()
-	print("Found file: %s" % wide_file_name)
+	data_to_map = get_wide_data()
 	
 	print("Locating interaction database...")
 	access_graphdb()
