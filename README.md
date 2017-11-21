@@ -3,6 +3,8 @@ Protein Interaction Networks and Integration with Novel Graphs
 
 A system for retrieving protein-protein interaction data for a set of proteins, integrating the resulting network with properties observed for the proteins (e.g., experimental observations), and identifying subgraphs within the interaction network most relevant to differences in the observed properties.
 
+![alt text](https://github.com/caufieldjh/pining/blob/master/subnetwork_analysis_overview.jpg "Overview of pining")
+
 (Work in progress.)
 
 This system includes several different modules.
