@@ -56,7 +56,38 @@ def access_graphdb():
 		print("**Error accessing the Neo4j database: %s" % e)
 		print("**Please try accessing the server at http://localhost:7474/")
 		sys.exit()
+
+def get_og_dict():
+	#Uses Uniprot to OG maps to build dict.
+	#Assumes the new data module has already created a map file.
+	#Returns error otherwise.
 	
+	og_dict = {}
+	
+	os.chdir(directories[2])
+	
+	map_file_list = glob.glob('uniprot_og_maps_*')
+	
+	if len(map_file_list) > 1:
+		sys.exit("More than one OG map file found. "
+					"Only one is necessary.")
+	if len(map_file_list) == 0:
+		sys.exit("Could not find an OG map file.\n"
+					"You may need to run the new data module first.")
+	
+	with open(map_file_list[0]) as map_file:
+		for line in map_file:
+			splitline = (line.rstrip()).split("\t")
+			og_dict[splitline[0]] = splitline[1]
+	
+	size = len(og_dict)
+	
+	print("Loaded %s protein IDs and their corresponding OGs." % size)
+	
+	os.chdir("..")
+	
+	return og_dict
+
 def get_wide_data():
 	#Returns contents of the wide data file produced by 
 	#pining_for_new_data
@@ -78,6 +109,11 @@ def get_wide_data():
 	data = pd.read_csv(wide_file_name, sep='\t', skipinitialspace=True, 
 						header=[0,1,2], index_col=0)
 	#print(data)
+	shape = data.shape
+	print("Data contains %s protein IDs and %s sets of values."
+			% (shape[0], shape[1]))
+	
+	os.chdir("..")
 	
 	return data
 	
@@ -88,13 +124,36 @@ def is_service_running(name):
         exit_code = subprocess.Popen(['service', name, 'status'], \
 			stdout=hide_output, stderr=hide_output).wait()
         return exit_code == 0
-
+        
+def map_data_to_OGs(data_frame, og_dict):
+	#Given a data frame of values and a protein-to-OG dictionary,
+	#returns the same data frame with corresponding OG IDs
+	#in the first column.
+	#This assumes the OG inherits the values of the protein -
+	#this may not always be true but allows values to extend
+	#across species.
+	
+	og_data = data_frame
+	
+	og_data.index = og_data.index.to_series().map(og_dict)
+	
+	print(og_data)
+	
+	return og_data
+		
 #Main
 def main():
 	print("** pining - turnover module **")
 	
 	print("Searching for wide format data file.")
 	data_to_map = get_wide_data()
+	
+	print("Retreiving OG IDs.")
+	og_dict = get_og_dict()
+	
+	print("Mapping data to OGs.")
+	og_data = map_data_to_OGs(data_to_map, og_dict)
+	print("Mapped.")
 	
 	print("Locating interaction database...")
 	access_graphdb()
