@@ -56,6 +56,32 @@ def access_graphdb():
 		print("**Error accessing the Neo4j database: %s" % e)
 		print("**Please try accessing the server at http://localhost:7474/")
 		sys.exit()
+		
+def add_values_to_graphdb(data):
+	#Adds values, provided in pandas dataframe, to Neo4j database.
+	#Assumes input dataframe is indexed using OG IDs.
+	#Requires unique OG IDs, so this must be resolved before passing
+	#input to this method.
+	#Just tests for now.
+	
+	#og_list = data.index.tolist()
+	#print(og_list)
+	
+	try:
+		#Just access graph and retrieve stats
+		g = Graph("http://localhost:7474/db/data/")
+		for index in set(data.index):
+			print(data.loc[index].reset_index())
+		#print("Graph contains %s protein interactions and %s OG memberships."
+		#		% (len(interactions), len(member_ofs)))
+	
+	except (py2neo.packages.httpstream.http.SocketError,
+			py2neo.database.status.Unauthorized) as e:
+		print("**Error accessing the Neo4j database: %s" % e)
+		print("**Please try accessing the server at http://localhost:7474/")
+		sys.exit()
+	
+	
 
 def get_og_dict():
 	#Uses Uniprot to OG maps to build dict.
@@ -132,6 +158,8 @@ def map_data_to_OGs(data_frame, og_dict):
 	#This assumes the OG inherits the values of the protein -
 	#this may not always be true but allows values to extend
 	#across species.
+	#Note that this will likely produce duplicate index values!
+	#This will be fixed soon. Trust me, please.
 	
 	og_data = data_frame
 	
@@ -157,6 +185,11 @@ def main():
 	
 	print("Locating interaction database...")
 	access_graphdb()
+	
+	print("Mapping data to interaction database...")
+	add_values_to_graphdb(og_data)
+	
+	print("Complete.")
 	
 if __name__ == "__main__":
 	sys.exit(main())
