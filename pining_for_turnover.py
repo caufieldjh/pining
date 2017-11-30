@@ -64,16 +64,25 @@ def add_values_to_graphdb(data):
 	#input to this method.
 	#Just tests for now.
 	
-	#og_list = data.index.tolist()
-	#print(og_list)
+	#Melt the data frame so each observation is one row.
+	flatdata = pd.melt(data.reset_index(), id_vars=['id'])
 	
+	#We don't know how many conditions there are -
+	#only that we have an id, a value, and n conditions in between.
+	flatdata["condition"] = flatdata.apply(lambda row: '|'.join(map(str, row.iloc[1:-1])), axis=1)
+	flatdata = flatdata.drop(flatdata.columns[1:-2], axis=1)
+	
+	#Now add it to the graph database
 	try:
-		#Just access graph and retrieve stats
 		g = Graph("http://localhost:7474/db/data/")
-		for index in set(data.index):
-			print(data.loc[index].reset_index())
-		#print("Graph contains %s protein interactions and %s OG memberships."
-		#		% (len(interactions), len(member_ofs)))
+		for index, row in flatdata.iterrows():
+			condition_name = row['condition']
+			cypher_string = "MATCH (n:OG {name:$id}) MERGE ({`%s`: $value})" % condition_name
+			g.run(cypher_string, parameters = {'id': row['id'],
+									'value': row['value']})
+		#for index in set(data.index):
+		#	node_id = index
+		#	print(data.loc[index])
 	
 	except (py2neo.packages.httpstream.http.SocketError,
 			py2neo.database.status.Unauthorized) as e:
@@ -81,8 +90,6 @@ def add_values_to_graphdb(data):
 		print("**Please try accessing the server at http://localhost:7474/")
 		sys.exit()
 	
-	
-
 def get_og_dict():
 	#Uses Uniprot to OG maps to build dict.
 	#Assumes the new data module has already created a map file.
