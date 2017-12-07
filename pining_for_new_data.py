@@ -1114,6 +1114,8 @@ def create_graphdb(interactions):
 	#"interacts with" relationships are between proteins,
 	#but "is a member of" relationships are between proteins and OGs.
 	
+	graph_build_complete = False
+	
 	#Assemble the input
 	prot_list = []
 	og_list = []
@@ -1132,48 +1134,57 @@ def create_graphdb(interactions):
 	if not is_service_running('neo4j'):
 		print("Starting neo4j service....")
 		os.system("sudo service neo4j start")
-		time.sleep(5)
+		time.sleep(5) #Take a few moments to let service start
 	authenticate("localhost:7474", "neo4j", "pining")
 	
-	try:
-		g = Graph("http://localhost:7474/db/data/")
-		g.delete_all()
-		tx = g.begin()
-
-		#Assemble the nodes in the graph
-		print("Assembling nodes.")
-		for name in prot_list:
-			this_node = Node("protein", name=name)
-			node_dict[name] = this_node
-			tx.create(this_node)
-		for name in og_list:
-			this_node = Node("OG", name=name)
-			node_dict[name] = this_node
-			tx.create(this_node)
-
-		#Assemble relationships in the graph
-		#Assumes each interaction involves one PPI and 2 OGs, 
-		#for 3 total realationships at most
-		print("Assembling relationships.")
-		pbar = tqdm(total=len(interactions)*3) 
-		for ppi in interactions:
-			tx.create(Relationship(node_dict[ppi[0]], "interacts_with", node_dict[ppi[1]]))
-			pbar.update(1)
-			tx.create(Relationship(node_dict[ppi[0]], "member_of", node_dict[ppi[2]]))
-			pbar.update(1)
-			tx.create(Relationship(node_dict[ppi[1]], "member_of", node_dict[ppi[3]]))
-			pbar.update(1)
-		tx.commit()
-		
-		pbar.close()
-		print("Access graph at http://localhost:7474")
-		
-	except (py2neo.packages.httpstream.http.SocketError,
-			py2neo.database.status.Unauthorized) as e:
-		print("**Error accessing the Neo4j database: %s" % e)
-		print("**Please try accessing the server at http://localhost:7474/")
-		print("**If this is a new database, you may need to set a password.")
-		print("**Please use the username \"neo4j\" and the password \"pining\".\n")
+	while not graph_build_complete:
+		try:
+			g = Graph("http://localhost:7474/db/data/")
+			g.delete_all()
+			tx = g.begin()
+	
+			#Assemble the nodes in the graph
+			print("Assembling nodes.")
+			for name in prot_list:
+				this_node = Node("protein", name=name)
+				node_dict[name] = this_node
+				tx.create(this_node)
+			for name in og_list:
+				this_node = Node("OG", name=name)
+				node_dict[name] = this_node
+				tx.create(this_node)
+	
+			#Assemble relationships in the graph
+			#Assumes each interaction involves one PPI and 2 OGs, 
+			#for 3 total realationships at most
+			print("Assembling relationships.")
+			pbar = tqdm(total=len(interactions)*3) 
+			for ppi in interactions:
+				tx.create(Relationship(node_dict[ppi[0]], "interacts_with", node_dict[ppi[1]]))
+				pbar.update(1)
+				tx.create(Relationship(node_dict[ppi[0]], "member_of", node_dict[ppi[2]]))
+				pbar.update(1)
+				tx.create(Relationship(node_dict[ppi[1]], "member_of", node_dict[ppi[3]]))
+				pbar.update(1)
+			tx.commit()
+			
+			pbar.close()
+			print("Access graph at http://localhost:7474")
+			graph_build_complete = True
+			
+		except py2neo.packages.httpstream.http.SocketError as e:
+			print("**Error accessing the Neo4j database: %s" % e)
+			print("**Please try accessing the server at http://localhost:7474/")
+		except (py2neo.database.status.Unauthorized,
+				py2neo.database.status.GraphError) as e:
+			#This may be a new database - the user needs to handle
+			#Really wish there was a better way to handle this
+			print("**If this is a new database, you may need to set a password.")
+			print("**Please try accessing the server at http://localhost:7474/")
+			print("**The default username is \"neo4j\" and the password is \"neo4j\".")
+			print("**Please change the password to \"pining\".\n")
+			raw_input("When done, press any key to continue.")
+			#I know, not Python 3 compatible, thank you
 	
 #Main
 def main():
