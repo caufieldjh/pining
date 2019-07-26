@@ -21,7 +21,7 @@ __author__= "Harry Caufield"
 __email__ = "j.harry.caufield@gmail.com"
 
 import argparse
-import glob, gzip, operator, os, random, re, sys, time, urllib2, zipfile
+import glob, gzip, operator, os, random, re, sys, time, urllib, urllib.request, zipfile
 from datetime import date
 
 import requests #For using Cytoscape's cyREST API
@@ -59,7 +59,7 @@ def build_bgid_conv_file(filename):
 		bgidfile.seek(0)
 		pbar = tqdm(total=filelen)
 		with open(outfilename, "w+b") as outfile:
-			outfile.write("BIOGRID_ID\tUNIPROT_ACCESSION\n")
+			#outfile.write("BIOGRID_ID\tUNIPROT_ACCESSION\n")
 			for line in bgidfile:
 				pbar.update(1)
 				#Skip the header first
@@ -259,7 +259,7 @@ def get_ppi_db(name):
 	if dl_dbfile:
 		print("Downloading %s database file." % name)
 		print("Downloading from %s" % dbfilepath)
-		response = urllib2.urlopen(dbfilepath)
+		response = urllib.request.urlopen(dbfilepath)
 		#print(response.headers.items())
 		
 		compressed_file = open(os.path.basename(dbfilepath), "w+b")
@@ -298,7 +298,7 @@ def get_ppi_db(name):
 		print("Downloading and decompressing BioGRID ID conversion file.")
 		dbfilepath = baseURL + bgidfilename
 		print("Downloading from %s" % dbfilepath)
-		response = urllib2.urlopen(dbfilepath)
+		response = urllib.request.urlopen(dbfilepath)
 		
 		compressed_file = open(os.path.basename(dbfilepath), "w+b")
 		#Start local compressed file
@@ -359,7 +359,7 @@ def get_eggnog_maps():
 		print("Downloading ID mapping file - "
 			"this file is ~400 Mb compressed so this may take some time.")
 		print("Downloading from %s" % convfilepath)
-		response = urllib2.urlopen(convfilepath)
+		response = urllib.request.urlopen(convfilepath)
 		compressed_file = open(os.path.basename(convfilename), "w+b") 
 		#Start local compressed file
 		chunk = 1048576
@@ -415,7 +415,7 @@ def get_eggnog_maps():
 		else:
 			print("\nDownloading NOG membership file - this may take some time.")
 			print("Downloading from %s" % memberfilepath)
-			response = urllib2.urlopen(memberfilepath)
+			response = urllib.request.urlopen(memberfilepath)
 			compressed_file = open(os.path.basename(memberfilename), "w+b") 
 			#Start local compressed file
 			chunk = 1048576
@@ -522,7 +522,7 @@ def get_eggnog_maps():
 
 	mapfile = open(mapfilename, "w+b")
 	for mapping in upid_to_NOG:
-		mapfile.write(mapping + "\t" + upid_to_NOG[mapping] + "\n")	
+		mapfile.write(mapping  + upid_to_NOG[mapping] )	
 		#Each line is a uniprot ID and an OG id
 	mapfile.close()
 	print("Map file complete.")
@@ -546,7 +546,7 @@ def get_eggnog_annotations():
 		if os.path.isfile(annfilename): 
 			print("Found compressed annotation file on disk: " + annfilename)
 		else:
-			response = urllib2.urlopen(annfilepath)
+			response = urllib.request.urlopen(annfilepath)
 			print("Downloading from " + annfilepath)
 			compressed_file = open(os.path.basename(annfilename), "w+b") 
 			#Start local compressed file
@@ -1009,7 +1009,7 @@ def save_interactions(filename, ppi, mode):
 	
 	os.chdir(directories[0])
 	
-	with open(filename, 'wb') as outfile:
+	with open(filename, 'w+') as outfile:
 		#Write the header
 		outfile.write("%s\n" % header)
 		for interaction in ppi:
@@ -1059,7 +1059,7 @@ def show_graph(interactions):
 	#graph
 	port = '1234'
 	ip = 'localhost'
-	base = 'http://' + ip + ':' + port + '/v1/'
+	base = 'http://' + ip + ':' + \\port + '/v1/'
 	headers = {'Content-Type': 'application/json'}
 	
 	pedges = ""
